@@ -1,6 +1,7 @@
 import Navbar from "@/components/navigation/Navbar";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
+import PageLayout from "@/components/layout/PageLayout";
 
 const articles = [
   {
@@ -31,6 +32,7 @@ const articles = [
 
 export default function ArticlesPage() {
   return (
+    <PageLayout theme="light">
     <main className="min-h-screen bg-ivory text-charcoal">
       <Navbar />
 
@@ -93,5 +95,6 @@ export default function ArticlesPage() {
         </div>
       </section>
     </main>
+    </PageLayout>
   );
 }

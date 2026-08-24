@@ -1,10 +1,8 @@
-import Navbar from "@/components/navigation/Navbar";
+import PageLayout from "@/components/layout/PageLayout";
 
 export default function PartnerPage() {
   return (
-    <main className="min-h-screen bg-ivory text-charcoal">
-      <Navbar />
-
+    <PageLayout theme="light">
       <section className="px-6 pb-24 pt-40 sm:px-8 lg:px-12 lg:pb-32 lg:pt-48">
         <div className="mx-auto max-w-5xl">
           <p className="eyebrow text-bronze">Partnership</p>
@@ -30,6 +28,6 @@ export default function PartnerPage() {
           </div>
         </div>
       </section>
-    </main>
+    </PageLayout>
   );
 }

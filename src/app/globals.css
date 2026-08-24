@@ -19,6 +19,7 @@
 }
 
 @theme inline {
+  --font-sans: var(--font-bricolage), sans-serif;
   --color-charcoal: var(--charcoal);
   --color-charcoal-soft: var(--charcoal-soft);
 
@@ -88,4 +89,14 @@ img {
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+.section-dark {
+  background: var(--charcoal);
+  color: var(--ivory);
+}
+
+.section-light {
+  background: var(--ivory);
+  color: var(--charcoal);
 }

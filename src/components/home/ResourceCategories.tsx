@@ -1,4 +1,6 @@
 import Link from "next/link";
+import Section from "@/components/layout/Section";
+
 import {
   BookOpen,
   Headphones,
@@ -42,7 +44,7 @@ const categories = [
 
 export default function ResourceCategories() {
   return (
-    <section className="bg-ivory text-charcoal">
+    <Section theme="light" className="py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 py-24 lg:px-8 lg:py-32">
         <div className="mb-14 max-w-2xl">
           <p className="mb-4 text-xs font-bold uppercase tracking-[0.3em] text-bronze">
@@ -86,6 +88,6 @@ export default function ResourceCategories() {
           })}
         </div>
       </div>
-    </section>
+    </Section>
   );
 }

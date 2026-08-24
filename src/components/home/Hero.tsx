@@ -1,8 +1,13 @@
 import Link from "next/link";
+import Section from "@/components/layout/Section";
+
 
 export default function Hero() {
   return (
-    <section className="relative min-h-screen overflow-hidden bg-charcoal">
+    <Section
+        theme="dark"
+        className="min-h-screen"
+    >
       {/* Placeholder visual */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_40%,rgba(183,154,91,0.14),transparent_32%)]" />
@@ -33,17 +38,17 @@ export default function Hero() {
                 </p>
             </div>
 
-          <div className="mt-10 flex flex-wrap gap-4">
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
             <Link
               href="/resources"
-              className="bg-gold px-7 py-4 text-xs font-bold uppercase tracking-[0.18em] text-charcoal transition-transform hover:-translate-y-0.5"
+              className="inline-flex min-w-[190px] items-center justify-center bg-gold px-7 py-4 text-xs font-bold uppercase tracking-[0.18em] text-charcoal transition-transform hover:-translate-y-0.5"
             >
               Explore Resources
             </Link>
 
             <Link
               href="/partner"
-              className="border border-white/20 px-7 py-4 text-xs font-bold uppercase tracking-[0.18em] text-ivory transition-colors hover:border-gold hover:text-gold"
+              className="inline-flex min-w-[190px] items-center justify-center border border-white/20 px-7 py-4 text-xs font-bold uppercase tracking-[0.18em] text-ivory transition-colors hover:border-gold hover:text-gold"
             >
                 Partner with us
 
@@ -59,6 +64,6 @@ export default function Hero() {
 
         <div className="h-px w-16 bg-gold/50" />
       </div>
-    </section>
+    </Section>
   );
 }

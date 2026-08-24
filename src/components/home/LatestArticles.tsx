@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import Reveal from "@/components/motion/Reveal";
 import Stagger from "@/components/motion/Stagger";
+import Section from "@/components/layout/Section";
 
 const articles = [
   {
@@ -32,7 +33,7 @@ const articles = [
 
 export default function LatestArticles() {
   return (
-    <section className="bg-ivory px-6 py-24 text-charcoal sm:px-8 lg:px-12 lg:py-32">
+    <Section theme="light" className="py-24 sm:py-32 lg:py-40">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
           <div>
@@ -104,6 +105,6 @@ export default function LatestArticles() {
           ))}
         </Stagger>
       </div>
-    </section>
+    </Section>
   );
 }

@@ -1,8 +1,9 @@
 import Link from "next/link";
+import Section from "@/components/layout/Section";
 
 export default function FeaturedResource() {
   return (
-    <section className="bg-charcoal">
+    <Section theme="dark" className="py-24 sm:py-32 lg:py-40">
       <div className="mx-auto max-w-7xl px-6 py-24 lg:px-8 lg:py-32">
         <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
@@ -42,6 +43,6 @@ export default function FeaturedResource() {
           </div>
         </div>
       </div>
-    </section>
+    </Section>
   );
 }
