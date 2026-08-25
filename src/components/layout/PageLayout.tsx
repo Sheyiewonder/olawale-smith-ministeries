@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import Navbar from "@/components/navigation/Navbar";
 import ThemeProvider from "@/components/theme/ThemeProvider";
+import Footer from "@/components/layout/Footer";
+
 import {
   pageThemes,
   type PageTheme,
@@ -34,6 +36,8 @@ export default function PageLayout({
         <Navbar />
 
         {children}
+
+        <Footer />
       </main>
     </ThemeProvider>
   );
