@@ -19,7 +19,9 @@ export default function ResourceSearch() {
   function updateSearch(value: string) {
     setSearch(value);
 
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(
+      searchParams.toString(),
+    );
 
     const trimmed = value.trim();
 
@@ -29,7 +31,6 @@ export default function ResourceSearch() {
       params.delete("search");
     }
 
-    // New search should start from page 1.
     params.delete("page");
 
     const query = params.toString();

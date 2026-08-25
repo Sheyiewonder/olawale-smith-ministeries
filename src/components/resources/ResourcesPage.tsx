@@ -93,16 +93,10 @@ export default function ResourcesPage() {
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="border-y border-charcoal/10 py-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <ResourceFilters
-              activeType={type}
-              onTypeChange={handleTypeChange}
-            />
+            <ResourceFilters/>
 
             <div className="w-full lg:max-w-sm">
-              <ResourceSearch
-                value={search}
-                onChange={handleSearchChange}
-              />
+              <ResourceSearch/>
             </div>
           </div>
         </div>
