@@ -9,7 +9,6 @@ export default function ResourceSearch() {
   const searchParams = useSearchParams();
 
   const currentSearch = searchParams.get("search") ?? "";
-  const activeType = searchParams.get("type") ?? "";
 
   const [search, setSearch] = useState(currentSearch);
 
@@ -17,39 +16,21 @@ export default function ResourceSearch() {
     setSearch(currentSearch);
   }, [currentSearch]);
 
-  function handleSubmit(
-    event: React.FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
+  function updateSearch(value: string) {
+    setSearch(value);
 
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(searchParams.toString());
 
-    if (activeType) {
-      params.set("type", activeType);
+    const trimmed = value.trim();
+
+    if (trimmed) {
+      params.set("search", trimmed);
+    } else {
+      params.delete("search");
     }
 
-    const trimmedSearch = search.trim();
-
-    if (trimmedSearch) {
-      params.set("search", trimmedSearch);
-    }
-
-    const query = params.toString();
-
-    router.push(
-      `/resources${query ? `?${query}` : ""}`,
-      { scroll: false },
-    );
-  }
-
-  function clearSearch() {
-    setSearch("");
-
-    const params = new URLSearchParams();
-
-    if (activeType) {
-      params.set("type", activeType);
-    }
+    // New search should start from page 1.
+    params.delete("page");
 
     const query = params.toString();
 
@@ -60,58 +41,34 @@ export default function ResourceSearch() {
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="w-full"
-    >
-      <div className="relative w-full">
-        {/* Gold Search Icon */}
-        <Search
-          size={18}
-          strokeWidth={1.8}
-          aria-hidden="true"
-          className="absolute left-5 top-1/2 z-10 -translate-y-1/2 text-gold"
-        />
+    <div className="relative">
+      <Search
+        size={18}
+        strokeWidth={1.5}
+        className="absolute left-5 top-1/2 z-10 -translate-y-1/2 text-gold"
+        aria-hidden="true"
+      />
 
-        <input
-          type="search"
-          value={search}
-          onChange={(event) =>
-            setSearch(event.target.value)
-          }
-          placeholder="Search the resource library..."
-          aria-label="Search the resource library"
-          className={[
-            "h-14 w-full",
-            "border border-charcoal/10",
-            "bg-white/60",
-            "pl-13 pr-12",
-            "text-sm text-charcoal",
-            "outline-none",
-            "backdrop-blur-md",
-            "transition-all",
-            "placeholder:text-charcoal/35",
-            "focus:border-bronze/50",
-            "focus:ring-2 focus:ring-bronze/10",
+      <input
+        type="search"
+        value={search}
+        onChange={(event) =>
+          updateSearch(event.target.value)
+        }
+        placeholder="Search the resource library..."
+        className="h-14 w-full appearance-none border border-charcoal/10 bg-white/60 pl-13 pr-12 text-sm text-charcoal outline-none backdrop-blur-md transition-all placeholder:text-charcoal/35 focus:border-bronze/50 focus:ring-2 focus:ring-bronze/10 [&::-webkit-search-cancel-button]:hidden"
+      />
 
-            // Remove browser's native search clear button
-            "[&::-webkit-search-cancel-button]:appearance-none",
-            "[&::-webkit-search-decoration]:appearance-none",
-          ].join(" ")}
-        />
-
-        {/* Gold Clear Button */}
-        {search && (
-          <button
-            type="button"
-            onClick={clearSearch}
-            aria-label="Clear search"
-            className="absolute right-5 top-1/2 z-10 -translate-y-1/2 text-gold transition-colors hover:text-bronze"
-          >
-            <X size={17} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-    </form>
+      {search && (
+        <button
+          type="button"
+          onClick={() => updateSearch("")}
+          aria-label="Clear search"
+          className="absolute right-5 top-1/2 z-10 -translate-y-1/2 text-bronze transition-colors hover:text-charcoal"
+        >
+          <X size={17} strokeWidth={1.5} />
+        </button>
+      )}
+    </div>
   );
 }
