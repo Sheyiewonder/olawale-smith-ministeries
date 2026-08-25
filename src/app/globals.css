@@ -34,6 +34,12 @@
   --color-white: var(--white);
 }
 
+@layer components {
+  .input {
+    @apply h-12 w-full border border-charcoal/10 bg-white px-4 text-sm text-charcoal outline-none transition-all placeholder:text-charcoal/30 focus:border-bronze/50 focus:ring-2 focus:ring-bronze/10;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -99,4 +105,27 @@ img {
 .section-light {
   background: var(--ivory);
   color: var(--charcoal);
+}
+
+.admin-input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgb(7 9 46 / 0.1);
+  background: white;
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+  color: #07092e;
+  outline: none;
+  transition:
+    border-color 300ms ease,
+    box-shadow 300ms ease;
+}
+
+.admin-input::placeholder {
+  color: rgb(7 9 46 / 0.3);
+}
+
+.admin-input:focus {
+  border-color: rgb(180 130 40 / 0.5);
+  box-shadow: 0 0 0 3px rgb(180 130 40 / 0.1);
 }
