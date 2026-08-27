@@ -9,7 +9,7 @@ export default function Home() {
     <PageLayout theme="dark">
       <Hero />
       <FeaturedResource />
-      {/* <ResourceCategories /> */}
+      <ResourceCategories />
       <LatestArticles />
     </PageLayout>
   );

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import Section from "@/components/layout/Section";
-
 import {
   BookOpen,
   FolderOpen,
@@ -24,7 +23,18 @@ const categoryIcons = [
 ];
 
 export default async function ResourceCategories() {
-  const categories = await getCategories();
+  let categories;
+
+  try {
+    categories = await getCategories();
+  } catch (error) {
+    console.error(
+      "Failed to load resource categories:",
+      error,
+    );
+
+    return null;
+  }
 
   if (!categories.length) {
     return null;
@@ -53,44 +63,42 @@ export default async function ResourceCategories() {
         </div>
 
         <div className="grid border-l border-t border-charcoal/15 sm:grid-cols-2 lg:grid-cols-3">
-          {categories.map(
-            (category, index) => {
-              const Icon =
-                categoryIcons[
-                  index % categoryIcons.length
-                ];
+          {categories.map((category, index) => {
+            const Icon =
+              categoryIcons[
+                index % categoryIcons.length
+              ];
 
-              return (
-                <Link
-                  key={category.id}
-                  href={`/resources?category=${encodeURIComponent(
-                    category.slug,
-                  )}`}
-                  className="group border-b border-r border-charcoal/15 p-7 transition-colors hover:bg-charcoal hover:text-ivory lg:p-8"
-                >
-                  <Icon
-                    size={22}
-                    strokeWidth={1.3}
-                    className="mb-16 text-bronze transition-colors group-hover:text-gold"
-                  />
+            return (
+              <Link
+                key={category.id}
+                href={`/resources?category=${encodeURIComponent(
+                  category.slug,
+                )}`}
+                className="group border-b border-r border-charcoal/15 p-7 transition-colors hover:bg-charcoal hover:text-ivory lg:p-8"
+              >
+                <Icon
+                  size={22}
+                  strokeWidth={1.3}
+                  className="mb-16 text-bronze transition-colors group-hover:text-gold"
+                />
 
-                  <h3 className="font-[var(--font-bricolage)] text-3xl">
-                    {category.name}
-                  </h3>
+                <h3 className="font-[var(--font-bricolage)] text-3xl">
+                  {category.name}
+                </h3>
 
-                  {category.description && (
-                    <p className="mt-3 text-sm leading-6 text-charcoal/60 transition-colors group-hover:text-ivory/55">
-                      {category.description}
-                    </p>
-                  )}
+                {category.description && (
+                  <p className="mt-3 text-sm leading-6 text-charcoal/60 transition-colors group-hover:text-ivory/55">
+                    {category.description}
+                  </p>
+                )}
 
-                  <div className="mt-8 text-[10px] font-bold uppercase tracking-[0.2em] text-bronze">
-                    Explore →
-                  </div>
-                </Link>
-              );
-            },
-          )}
+                <div className="mt-8 text-[10px] font-bold uppercase tracking-[0.2em] text-bronze">
+                  Explore →
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </div>
     </Section>
