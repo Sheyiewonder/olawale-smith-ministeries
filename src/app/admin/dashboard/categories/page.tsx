@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { adminRequest } from "@/lib/admin-api";
+import AdminDialog from "@/components/admin/AdminDialog";
 
 interface Category {
   id: string;
@@ -26,6 +27,26 @@ interface Category {
     resources: number;
   };
 }
+
+type DialogState =
+  | {
+      type: "delete";
+      category: Category;
+    }
+  | {
+      type: "blocked";
+      category: Category;
+    }
+  | {
+      type: "success";
+      category: Category;
+    }
+  | {
+      type: "error";
+      category?: Category;
+      message: string;
+    }
+  | null;
 
 export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState<Category[]>(
@@ -43,6 +64,13 @@ export default function AdminCategoriesPage() {
   const [deletingId, setDeletingId] = useState<
     string | null
   >(null);
+
+  const [dialog, setDialog] =
+    useState<DialogState>(null);
+
+  /* ------------------------------------------------------------------------ */
+  /* Load Categories                                                          */
+  /* ------------------------------------------------------------------------ */
 
   async function loadCategories() {
     try {
@@ -69,6 +97,10 @@ export default function AdminCategoriesPage() {
     loadCategories();
   }, []);
 
+  /* ------------------------------------------------------------------------ */
+  /* Search                                                                   */
+  /* ------------------------------------------------------------------------ */
+
   const filteredCategories = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -90,35 +122,43 @@ export default function AdminCategoriesPage() {
     );
   }, [categories, search]);
 
-  async function handleDelete(
-    category: Category,
-  ) {
+  /* ------------------------------------------------------------------------ */
+  /* Delete                                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  function requestDelete(category: Category) {
+    setMenuId(null);
+
+    const resourceCount =
+      category._count?.resources ?? 0;
+
+    if (resourceCount > 0) {
+      setDialog({
+        type: "blocked",
+        category,
+      });
+
+      return;
+    }
+
+    setDialog({
+      type: "delete",
+      category,
+    });
+  }
+
+  async function confirmDelete() {
     if (
-      category._count?.resources &&
-      category._count.resources > 0
+      !dialog ||
+      dialog.type !== "delete"
     ) {
-      window.alert(
-        `You cannot delete "${category.name}" because it is currently assigned to ${category._count.resources} resource${
-          category._count.resources === 1
-            ? ""
-            : "s"
-        }.`,
-      );
-
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete "${category.name}"? This action cannot be undone.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
+    const category = dialog.category;
 
     try {
       setDeletingId(category.id);
-      setMenuId(null);
 
       await adminRequest(
         `/admin/categories/${category.id}`,
@@ -132,133 +172,240 @@ export default function AdminCategoriesPage() {
           (item) => item.id !== category.id,
         ),
       );
+
+      setDialog({
+        type: "success",
+        category,
+      });
     } catch (error) {
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : "Unable to delete category.",
-      );
+      setDialog({
+        type: "error",
+        category,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to delete category.",
+      });
     } finally {
       setDeletingId(null);
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Dialog                                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  function closeDialog() {
+    if (deletingId) {
+      return;
+    }
+
+    setDialog(null);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                    */
+  /* ------------------------------------------------------------------------ */
+
   return (
-    <main
-      className="min-h-screen bg-ivory text-charcoal"
-      onClick={() => setMenuId(null)}
-    >
-      {/* Header */}
-      <header className="border-b border-charcoal/10 bg-white">
-        <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between px-6 py-6 lg:px-10">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bronze">
-              Content Management
-            </p>
+    <>
+      <main
+        className="min-h-screen bg-ivory text-charcoal"
+        onClick={() => setMenuId(null)}
+      >
+        {/* Header */}
+        <header className="border-b border-charcoal/10 bg-white">
+          <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between px-6 py-6 lg:px-10">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bronze">
+                Content Management
+              </p>
 
-            <h1 className="display-heading mt-2 text-3xl sm:text-4xl">
-              Categories
-            </h1>
+              <h1 className="display-heading mt-2 text-3xl sm:text-4xl">
+                Categories
+              </h1>
 
-            <p className="mt-2 max-w-xl text-sm leading-6 text-charcoal/45">
-              Organize sermons, ebooks, songs, videos,
-              podcasts, and articles into meaningful
-              collections.
-            </p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-charcoal/45">
+                Organize sermons, ebooks, songs, videos,
+                podcasts, and articles into meaningful
+                collections.
+              </p>
+            </div>
+
+            <Link
+              href="/admin/dashboard/categories/new"
+              className="group inline-flex items-center gap-2 bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
+            >
+              <Plus size={15} />
+
+              New Category
+
+              <ArrowUpRight
+                size={14}
+                className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+              />
+            </Link>
           </div>
+        </header>
 
-          <Link
-            href="/admin/dashboard/categories/new"
-            className="group inline-flex items-center gap-2 bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
-          >
-            <Plus size={15} />
-
-            New Category
-
-            <ArrowUpRight
-              size={14}
-              className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-            />
-          </Link>
-        </div>
-      </header>
-
-      <div className="mx-auto w-full max-w-[1600px] px-6 py-8 lg:px-10 lg:py-12">
-        {/* Stats */}
-        <div className="grid gap-px overflow-hidden border border-charcoal/10 bg-charcoal/10 sm:grid-cols-2 lg:grid-cols-3">
-          <Stat
-            label="Total Categories"
-            value={categories.length}
-          />
-
-          <Stat
-            label="Assigned Resources"
-            value={categories.reduce(
-              (total, category) =>
-                total +
-                (category._count?.resources ?? 0),
-              0,
-            )}
-          />
-
-          <Stat
-            label="Unused Categories"
-            value={
-              categories.filter(
-                (category) =>
-                  (category._count?.resources ?? 0) ===
-                  0,
-              ).length
-            }
-          />
-        </div>
-
-        {/* Search */}
-        <div className="mt-10">
-          <div className="relative max-w-2xl">
-            <Search
-              size={17}
-              strokeWidth={1.5}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-bronze"
+        <div className="mx-auto w-full max-w-[1600px] px-6 py-8 lg:px-10 lg:py-12">
+          {/* Stats */}
+          <div className="grid gap-px overflow-hidden border border-charcoal/10 bg-charcoal/10 sm:grid-cols-2 lg:grid-cols-3">
+            <Stat
+              label="Total Categories"
+              value={categories.length}
             />
 
-            <input
-              type="search"
-              value={search}
-              onChange={(event) =>
-                setSearch(event.target.value)
+            <Stat
+              label="Assigned Resources"
+              value={categories.reduce(
+                (total, category) =>
+                  total +
+                  (category._count?.resources ?? 0),
+                0,
+              )}
+            />
+
+            <Stat
+              label="Unused Categories"
+              value={
+                categories.filter(
+                  (category) =>
+                    (category._count?.resources ?? 0) ===
+                    0,
+                ).length
               }
-              placeholder="Search categories..."
-              className="h-12 w-full appearance-none border border-charcoal/10 bg-white pl-11 pr-5 text-sm outline-none transition-all placeholder:text-charcoal/35 focus:border-bronze/50 focus:ring-2 focus:ring-bronze/10"
             />
           </div>
-        </div>
 
-        {/* Content */}
-        <div className="mt-10">
-          {loading ? (
-            <LoadingState />
-          ) : error ? (
-            <ErrorState
-              message={error}
-              onRetry={loadCategories}
-            />
-          ) : filteredCategories.length === 0 ? (
-            <EmptyState
-              hasSearch={Boolean(search.trim())}
-            />
-          ) : (
-            <CategoryTable
-              categories={filteredCategories}
-              menuId={menuId}
-              setMenuId={setMenuId}
-              deletingId={deletingId}
-              onDelete={handleDelete}
-            />
-          )}
+          {/* Search */}
+          <div className="mt-10">
+            <div className="relative max-w-2xl">
+              <Search
+                size={17}
+                strokeWidth={1.5}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-bronze"
+              />
+
+              <input
+                type="search"
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search categories..."
+                className="h-12 w-full appearance-none border border-charcoal/10 bg-white pl-11 pr-5 text-sm outline-none transition-all placeholder:text-charcoal/35 focus:border-bronze/50 focus:ring-2 focus:ring-bronze/10"
+              />
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="mt-10">
+            {loading ? (
+              <LoadingState />
+            ) : error ? (
+              <ErrorState
+                message={error}
+                onRetry={loadCategories}
+              />
+            ) : filteredCategories.length === 0 ? (
+              <EmptyState
+                hasSearch={Boolean(search.trim())}
+              />
+            ) : (
+              <CategoryTable
+                categories={filteredCategories}
+                menuId={menuId}
+                setMenuId={setMenuId}
+                deletingId={deletingId}
+                onDelete={requestDelete}
+              />
+            )}
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Delete Confirmation Dialog                                         */}
+      {/* ------------------------------------------------------------------ */}
+
+      <AdminDialog
+        open={dialog?.type === "delete"}
+        title="Delete Category?"
+        description={
+          dialog?.type === "delete"
+            ? `Are you sure you want to delete "${dialog.category.name}"? This action cannot be undone.`
+            : undefined
+        }
+        variant="danger"
+        confirmLabel="Delete Category"
+        cancelLabel="Cancel"
+        loading={Boolean(deletingId)}
+        onConfirm={confirmDelete}
+        onCancel={closeDialog}
+      />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Blocked Delete Dialog                                              */}
+      {/* ------------------------------------------------------------------ */}
+
+      <AdminDialog
+        open={dialog?.type === "blocked"}
+        title="Category Cannot Be Deleted"
+        description={
+          dialog?.type === "blocked"
+            ? `"${dialog.category.name}" is currently assigned to ${
+                dialog.category._count?.resources ?? 0
+              } resource${
+                (dialog.category._count?.resources ?? 0) ===
+                1
+                  ? ""
+                  : "s"
+              }. Remove those resource assignments before deleting this category.`
+            : undefined
+        }
+        variant="danger"
+        confirmLabel="Understood"
+        onConfirm={closeDialog}
+        onCancel={closeDialog}
+      />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Success Dialog                                                     */}
+      {/* ------------------------------------------------------------------ */}
+
+      <AdminDialog
+        open={dialog?.type === "success"}
+        title="Category Deleted"
+        description={
+          dialog?.type === "success"
+            ? `"${dialog.category.name}" has been successfully removed from your ministry library.`
+            : undefined
+        }
+        variant="success"
+        confirmLabel="Done"
+        onConfirm={closeDialog}
+        onCancel={closeDialog}
+      />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Error Dialog                                                       */}
+      {/* ------------------------------------------------------------------ */}
+
+      <AdminDialog
+        open={dialog?.type === "error"}
+        title="Unable to Delete Category"
+        description={
+          dialog?.type === "error"
+            ? dialog.message
+            : undefined
+        }
+        variant="danger"
+        confirmLabel="Close"
+        onConfirm={closeDialog}
+        onCancel={closeDialog}
+      />
+    </>
   );
 }
 

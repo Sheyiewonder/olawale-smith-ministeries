@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
-  FileText,
   Headphones,
   Loader2,
   Plus,
@@ -14,32 +13,21 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
 
 import {
   createResource,
+  getAdminCategories,
+  type AdminCategory,
   type CreateResourceInput,
+  type ResourceType,
+  type MediaType,
+  type MediaProvider,
 } from "@/lib/admin-api";
-
-type ResourceType =
-  | "SERMON"
-  | "EBOOK"
-  | "SONG"
-  | "VIDEO"
-  | "PODCAST"
-  | "ARTICLE";
-
-type MediaType =
-  | "AUDIO"
-  | "PDF"
-  | "IMAGE"
-  | "VIDEO";
-
-type MediaProvider =
-  | "R2"
-  | "YOUTUBE"
-  | "SUPABASE"
-  | "EXTERNAL";
 
 interface MediaItem {
   type: MediaType;
@@ -84,24 +72,101 @@ const mediaProviders: {
 export default function NewResourcePage() {
   const router = useRouter();
 
+  /* ------------------------------------------------------------------------ */
+  /* Basic resource state                                                     */
+  /* ------------------------------------------------------------------------ */
+
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
+
   const [type, setType] =
     useState<ResourceType>("SERMON");
+
   const [speaker, setSpeaker] = useState("");
 
   const [featured, setFeatured] = useState(false);
   const [published, setPublished] = useState(false);
 
+  /* ------------------------------------------------------------------------ */
+  /* Categories                                                               */
+  /* ------------------------------------------------------------------------ */
+
+  const [categories, setCategories] =
+    useState<AdminCategory[]>([]);
+
+  const [selectedCategoryIds, setSelectedCategoryIds] =
+    useState<string[]>([]);
+
+  const [categoriesLoading, setCategoriesLoading] =
+    useState(true);
+
+  const [categoriesError, setCategoriesError] =
+    useState("");
+
+  /* ------------------------------------------------------------------------ */
+  /* Media                                                                    */
+  /* ------------------------------------------------------------------------ */
+
   const [media, setMedia] = useState<MediaItem[]>([]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Submission                                                               */
+  /* ------------------------------------------------------------------------ */
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const [showSuccess, setShowSuccess] =
     useState(false);
+
+  /* ------------------------------------------------------------------------ */
+  /* Load categories                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadCategories() {
+      try {
+        setCategoriesLoading(true);
+        setCategoriesError("");
+
+        const response = await getAdminCategories();
+
+        if (!mounted) {
+          return;
+        }
+
+        setCategories(response.data ?? []);
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+
+        setCategoriesError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load categories.",
+        );
+      } finally {
+        if (mounted) {
+          setCategoriesLoading(false);
+        }
+      }
+    }
+
+    loadCategories();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  /* ------------------------------------------------------------------------ */
+  /* Slug                                                                     */
+  /* ------------------------------------------------------------------------ */
 
   function generateSlug(value: string) {
     return value
@@ -119,6 +184,26 @@ export default function NewResourcePage() {
       setSlug(generateSlug(value));
     }
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Categories                                                               */
+  /* ------------------------------------------------------------------------ */
+
+  function toggleCategory(categoryId: string) {
+    setSelectedCategoryIds((current) => {
+      if (current.includes(categoryId)) {
+        return current.filter(
+          (id) => id !== categoryId,
+        );
+      }
+
+      return [...current, categoryId];
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Media                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   function addMedia() {
     setMedia((current) => [
@@ -153,10 +238,15 @@ export default function NewResourcePage() {
   function removeMedia(index: number) {
     setMedia((current) =>
       current.filter(
-        (_, itemIndex) => itemIndex !== index,
+        (_, itemIndex) =>
+          itemIndex !== index,
       ),
     );
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Submit                                                                   */
+  /* ------------------------------------------------------------------------ */
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
@@ -165,13 +255,20 @@ export default function NewResourcePage() {
 
     setError("");
 
-    if (!title.trim()) {
-      setError("Please enter a resource title.");
+    const trimmedTitle = title.trim();
+    const trimmedSlug = slug.trim();
+
+    if (!trimmedTitle) {
+      setError(
+        "Please enter a resource title.",
+      );
       return;
     }
 
-    if (!slug.trim()) {
-      setError("Please enter a resource slug.");
+    if (!trimmedSlug) {
+      setError(
+        "Please enter a resource slug.",
+      );
       return;
     }
 
@@ -179,17 +276,33 @@ export default function NewResourcePage() {
       setSaving(true);
 
       const input: CreateResourceInput = {
-        title: title.trim(),
-        slug: slug.trim(),
+        title: trimmedTitle,
+        slug: trimmedSlug,
+
         description:
           description.trim() || undefined,
-        content: content.trim() || undefined,
+
+        content:
+          content.trim() || undefined,
+
         type,
-        speaker: speaker.trim() || undefined,
+
+        speaker:
+          speaker.trim() || undefined,
+
         featured,
         published,
 
-        categoryIds: [],
+        /*
+         * These are the actual category IDs that
+         * will be sent to the backend.
+         */
+        categoryIds:
+          selectedCategoryIds,
+
+        /*
+         * Tags are not implemented in this form yet.
+         */
         tagIds: [],
 
         media: media
@@ -199,14 +312,26 @@ export default function NewResourcePage() {
               item.externalId.trim(),
           )
           .map((item) => ({
+            ...(item.id
+              ? { id: item.id }
+              : {}),
+
             type: item.type,
+
             provider: item.provider,
+
             title:
-              item.title.trim() || undefined,
-            url: item.url.trim() || undefined,
+              item.title.trim() ||
+              undefined,
+
+            url:
+              item.url.trim() ||
+              undefined,
+
             externalId:
-              item.externalId.trim() || undefined,
-          })),
+              item.externalId.trim() ||
+              undefined,
+        })),
       };
 
       await createResource(input);
@@ -225,7 +350,10 @@ export default function NewResourcePage() {
 
   function handleSuccessClose() {
     setShowSuccess(false);
-    router.push("/admin/dashboard/resources");
+
+    router.push(
+      "/admin/dashboard/resources",
+    );
   }
 
   return (
@@ -266,7 +394,7 @@ export default function NewResourcePage() {
         >
           {/* Main content */}
           <div className="space-y-8">
-            {/* Basic information */}
+            {/* Basic Information */}
             <section className="border border-charcoal/10 bg-white">
               <div className="border-b border-charcoal/10 px-6 py-5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
@@ -304,7 +432,9 @@ export default function NewResourcePage() {
                   <input
                     value={slug}
                     onChange={(event) =>
-                      setSlug(event.target.value)
+                      setSlug(
+                        event.target.value,
+                      )
                     }
                     placeholder="walking-in-purpose"
                     className="input"
@@ -387,6 +517,128 @@ export default function NewResourcePage() {
               </div>
             </section>
 
+            {/* Categories */}
+            <section className="border border-charcoal/10 bg-white">
+              <div className="border-b border-charcoal/10 px-6 py-5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Organization
+                </p>
+
+                <h2 className="mt-2 text-xl font-medium">
+                  Categories
+                </h2>
+
+                <p className="mt-1 text-xs text-charcoal/40">
+                  Assign one or more categories to
+                  organize this resource.
+                </p>
+              </div>
+
+              <div className="p-6">
+                {categoriesLoading ? (
+                  <div className="flex items-center gap-3 py-6 text-sm text-charcoal/40">
+                    <Loader2
+                      size={16}
+                      className="animate-spin"
+                    />
+                    Loading categories...
+                  </div>
+                ) : categoriesError ? (
+                  <div className="border border-red-500/15 bg-red-500/[0.03] p-4">
+                    <p className="text-sm text-red-600">
+                      {categoriesError}
+                    </p>
+                  </div>
+                ) : categories.length === 0 ? (
+                  <div className="border border-dashed border-charcoal/10 px-5 py-8 text-center">
+                    <p className="text-sm text-charcoal/45">
+                      No categories have been
+                      created yet.
+                    </p>
+
+                    <p className="mt-2 text-[11px] leading-5 text-charcoal/35">
+                      Create categories from the
+                      Categories section of the
+                      admin dashboard.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {categories.map(
+                      (category) => {
+                        const selected =
+                          selectedCategoryIds.includes(
+                            category.id,
+                          );
+
+                        return (
+                          <button
+                            key={category.id}
+                            type="button"
+                            onClick={() =>
+                              toggleCategory(
+                                category.id,
+                              )
+                            }
+                            className={[
+                              "flex items-start gap-3 border p-4 text-left transition-all",
+                              selected
+                                ? "border-bronze bg-bronze/[0.06]"
+                                : "border-charcoal/10 hover:border-bronze/40",
+                            ].join(" ")}
+                          >
+                            <span
+                              className={[
+                                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border transition-colors",
+                                selected
+                                  ? "border-bronze bg-bronze text-ivory"
+                                  : "border-charcoal/20 bg-white",
+                              ].join(" ")}
+                            >
+                              {selected && (
+                                <Check
+                                  size={11}
+                                  strokeWidth={2.5}
+                                />
+                              )}
+                            </span>
+
+                            <span className="min-w-0">
+                              <span className="block text-xs font-medium">
+                                {category.name}
+                              </span>
+
+                              <span className="mt-1 block truncate text-[10px] text-charcoal/35">
+                                /{category.slug}
+                              </span>
+
+                              {category.description && (
+                                <span className="mt-2 block line-clamp-2 text-[11px] leading-5 text-charcoal/40">
+                                  {
+                                    category.description
+                                  }
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      },
+                    )}
+                  </div>
+                )}
+
+                {selectedCategoryIds.length > 0 && (
+                  <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze">
+                    {selectedCategoryIds.length}{" "}
+                    {selectedCategoryIds.length === 1
+                      ? "category"
+                      : "categories"}{" "}
+                    selected
+                  </p>
+                )}
+              </div>
+            </section>
+
             {/* Media */}
             <section className="border border-charcoal/10 bg-white">
               <div className="flex items-center justify-between border-b border-charcoal/10 px-6 py-5">
@@ -461,7 +713,8 @@ export default function NewResourcePage() {
 
                               <div>
                                 <p className="text-xs font-medium">
-                                  Media {index + 1}
+                                  Media{" "}
+                                  {index + 1}
                                 </p>
 
                                 <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-charcoal/35">
@@ -480,34 +733,25 @@ export default function NewResourcePage() {
                               className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
                               aria-label="Remove media"
                             >
-                              <Trash2
-                                size={15}
-                              />
+                              <Trash2 size={15} />
                             </button>
                           </div>
 
                           <div className="grid gap-5 sm:grid-cols-2">
                             <Field label="Media Type">
                               <select
-                                value={
-                                  item.type
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
+                                value={item.type}
+                                onChange={(event) =>
                                   updateMedia(
                                     index,
                                     "type",
-                                    event.target
-                                      .value,
+                                    event.target.value,
                                   )
                                 }
                                 className="input"
                               >
                                 {mediaTypes.map(
-                                  (
-                                    mediaType,
-                                  ) => (
+                                  (mediaType) => (
                                     <option
                                       key={
                                         mediaType.value
@@ -527,25 +771,18 @@ export default function NewResourcePage() {
 
                             <Field label="Provider">
                               <select
-                                value={
-                                  item.provider
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
+                                value={item.provider}
+                                onChange={(event) =>
                                   updateMedia(
                                     index,
                                     "provider",
-                                    event.target
-                                      .value,
+                                    event.target.value,
                                   )
                                 }
                                 className="input"
                               >
                                 {mediaProviders.map(
-                                  (
-                                    provider,
-                                  ) => (
+                                  (provider) => (
                                     <option
                                       key={
                                         provider.value
@@ -567,17 +804,12 @@ export default function NewResourcePage() {
                           <div className="mt-5">
                             <Field label="Media Title">
                               <input
-                                value={
-                                  item.title
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
+                                value={item.title}
+                                onChange={(event) =>
                                   updateMedia(
                                     index,
                                     "title",
-                                    event.target
-                                      .value,
+                                    event.target.value,
                                   )
                                 }
                                 placeholder="Walking in Purpose — Full Sermon"
@@ -593,17 +825,12 @@ export default function NewResourcePage() {
                             >
                               <input
                                 type="url"
-                                value={
-                                  item.url
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
+                                value={item.url}
+                                onChange={(event) =>
                                   updateMedia(
                                     index,
                                     "url",
-                                    event.target
-                                      .value,
+                                    event.target.value,
                                   )
                                 }
                                 placeholder="https://youtu.be/..."
@@ -621,14 +848,11 @@ export default function NewResourcePage() {
                                 value={
                                   item.externalId
                                 }
-                                onChange={(
-                                  event,
-                                ) =>
+                                onChange={(event) =>
                                   updateMedia(
                                     index,
                                     "externalId",
-                                    event.target
-                                      .value,
+                                    event.target.value,
                                   )
                                 }
                                 placeholder="XyCHesmYev0"
@@ -647,6 +871,7 @@ export default function NewResourcePage() {
 
           {/* Sidebar */}
           <aside className="space-y-6">
+            {/* Publishing */}
             <section className="border border-charcoal/10 bg-white">
               <div className="border-b border-charcoal/10 px-6 py-5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
@@ -675,6 +900,37 @@ export default function NewResourcePage() {
               </div>
             </section>
 
+            {/* Selected categories */}
+            {selectedCategoryIds.length > 0 && (
+              <section className="border border-charcoal/10 bg-white p-6">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Organization
+                </p>
+
+                <h2 className="mt-2 text-sm font-medium">
+                  Selected categories
+                </h2>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {categories
+                    .filter((category) =>
+                      selectedCategoryIds.includes(
+                        category.id,
+                      ),
+                    )
+                    .map((category) => (
+                      <span
+                        key={category.id}
+                        className="inline-flex items-center gap-1.5 bg-bronze/10 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze"
+                      >
+                        {category.name}
+                      </span>
+                    ))}
+                </div>
+              </section>
+            )}
+
+            {/* Error */}
             {error && (
               <div className="border border-red-500/15 bg-red-500/[0.03] p-5">
                 <p className="text-sm leading-6 text-red-600">
@@ -683,6 +939,7 @@ export default function NewResourcePage() {
               </div>
             )}
 
+            {/* Actions */}
             <section className="border border-charcoal/10 bg-white p-6">
               <button
                 type="submit"
@@ -701,6 +958,7 @@ export default function NewResourcePage() {
                   <>
                     <Check size={15} />
                     Create Resource
+
                     <ArrowUpRight
                       size={14}
                       className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
@@ -732,7 +990,7 @@ export default function NewResourcePage() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Components                                                                 */
+/* Field                                                                      */
 /* -------------------------------------------------------------------------- */
 
 function Field({
@@ -770,6 +1028,10 @@ function Field({
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Toggle                                                                     */
+/* -------------------------------------------------------------------------- */
 
 function Toggle({
   label,
@@ -819,6 +1081,10 @@ function Toggle({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Success Dialog                                                             */
+/* -------------------------------------------------------------------------- */
+
 function SuccessDialog({
   onContinue,
 }: {
@@ -828,7 +1094,10 @@ function SuccessDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/40 px-6 backdrop-blur-sm">
       <div className="w-full max-w-md border border-charcoal/10 bg-white p-8 shadow-2xl">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 text-green-600">
-          <Check size={25} strokeWidth={2} />
+          <Check
+            size={25}
+            strokeWidth={2}
+          />
         </div>
 
         <div className="mt-6 text-center">

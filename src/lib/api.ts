@@ -144,6 +144,31 @@ export interface ResourceQuery {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Get Categories                                                             */
+/* -------------------------------------------------------------------------- */
+
+export async function getCategories(): Promise<Category[]> {
+  const response = await fetch(
+    `${API_URL}/categories`,
+    {
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch categories (${response.status})`,
+    );
+  }
+
+  const result: {
+    data: Category[];
+  } = await response.json();
+
+  return result.data;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Get Resources                                                              */
 /* -------------------------------------------------------------------------- */
 

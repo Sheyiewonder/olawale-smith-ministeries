@@ -6,173 +6,106 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
-  FileText,
+  Headphones,
   Loader2,
   Plus,
   Trash2,
   Video,
-  Headphones,
-  BookOpen,
-  Mic2,
-  Music2,
-  Save,
   X,
 } from "lucide-react";
 import {
+  FormEvent,
   useEffect,
   useState,
 } from "react";
 
 import {
+  getAdminCategories,
   getAdminResource,
   updateResource,
+  type AdminCategory,
   type AdminResource,
-  type UpdateResourceInput,
+  type CreateResourceInput,
+  type ResourceType,
+  type MediaType,
+  type MediaProvider,
 } from "@/lib/admin-api";
 
-type ResourceType =
-  | "SERMON"
-  | "EBOOK"
-  | "SONG"
-  | "VIDEO"
-  | "PODCAST"
-  | "ARTICLE";
-
-type MediaType =
-  | "AUDIO"
-  | "PDF"
-  | "IMAGE"
-  | "VIDEO";
-
-type MediaProvider =
-  | "R2"
-  | "YOUTUBE"
-  | "SUPABASE"
-  | "EXTERNAL";
-
-interface MediaForm {
+interface MediaItem {
   id?: string;
   type: MediaType;
   provider: MediaProvider;
   title: string;
   url: string;
-  storageKey: string;
   externalId: string;
-  mimeType: string;
-  duration: string;
 }
 
 const resourceTypes: {
   value: ResourceType;
   label: string;
 }[] = [
-  {
-    value: "SERMON",
-    label: "Sermon",
-  },
-  {
-    value: "EBOOK",
-    label: "Ebook",
-  },
-  {
-    value: "SONG",
-    label: "Song",
-  },
-  {
-    value: "VIDEO",
-    label: "Video",
-  },
-  {
-    value: "PODCAST",
-    label: "Podcast",
-  },
-  {
-    value: "ARTICLE",
-    label: "Article",
-  },
+  { value: "SERMON", label: "Sermon" },
+  { value: "EBOOK", label: "Ebook" },
+  { value: "SONG", label: "Song" },
+  { value: "VIDEO", label: "Video" },
+  { value: "PODCAST", label: "Podcast" },
+  { value: "ARTICLE", label: "Article" },
 ];
 
 const mediaTypes: {
   value: MediaType;
   label: string;
 }[] = [
-  {
-    value: "AUDIO",
-    label: "Audio",
-  },
-  {
-    value: "PDF",
-    label: "PDF",
-  },
-  {
-    value: "IMAGE",
-    label: "Image",
-  },
-  {
-    value: "VIDEO",
-    label: "Video",
-  },
+  { value: "VIDEO", label: "Video" },
+  { value: "AUDIO", label: "Audio" },
+  { value: "PDF", label: "PDF" },
+  { value: "IMAGE", label: "Image" },
 ];
 
 const mediaProviders: {
   value: MediaProvider;
   label: string;
 }[] = [
-  {
-    value: "R2",
-    label: "Cloudflare R2",
-  },
-  {
-    value: "YOUTUBE",
-    label: "YouTube",
-  },
-  {
-    value: "SUPABASE",
-    label: "Supabase",
-  },
-  {
-    value: "EXTERNAL",
-    label: "External URL",
-  },
+  { value: "YOUTUBE", label: "YouTube" },
+  { value: "EXTERNAL", label: "External URL" },
+  { value: "R2", label: "Cloudflare R2" },
+  { value: "SUPABASE", label: "Supabase Storage" },
 ];
 
 export default function EditResourcePage() {
-  const params = useParams();
   const router = useRouter();
+  const params = useParams();
 
-  const id =
+  const resourceId =
     typeof params.id === "string"
       ? params.id
       : "";
 
-  const [resource, setResource] =
-    useState<AdminResource | null>(
-      null,
-    );
+  /* ------------------------------------------------------------------------ */
+  /* Loading                                                                  */
+  /* ------------------------------------------------------------------------ */
 
   const [loading, setLoading] =
     useState(true);
 
-  const [saving, setSaving] =
-    useState(false);
-
-  const [error, setError] =
+  const [loadingError, setLoadingError] =
     useState("");
 
-  const [success, setSuccess] =
-    useState(false);
+  const [categoriesLoading, setCategoriesLoading] =
+    useState(true);
 
-  const [title, setTitle] =
+  const [categoriesError, setCategoriesError] =
     useState("");
 
-  const [slug, setSlug] =
-    useState("");
+  /* ------------------------------------------------------------------------ */
+  /* Resource                                                                 */
+  /* ------------------------------------------------------------------------ */
 
+  const [title, setTitle] = useState("");
+  const [slug, setSlug] = useState("");
   const [description, setDescription] =
     useState("");
-
-  const [content, setContent] =
-    useState("");
+  const [content, setContent] = useState("");
 
   const [type, setType] =
     useState<ResourceType>("SERMON");
@@ -186,89 +119,267 @@ export default function EditResourcePage() {
   const [published, setPublished] =
     useState(false);
 
-  const [media, setMedia] =
-    useState<MediaForm[]>([]);
+  /* ------------------------------------------------------------------------ */
+  /* Categories                                                               */
+  /* ------------------------------------------------------------------------ */
 
-  useEffect(() => {
-    if (!id) {
+  const [categories, setCategories] =
+    useState<AdminCategory[]>([]);
+
+  const [
+    selectedCategoryIds,
+    setSelectedCategoryIds,
+  ] = useState<string[]>([]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Media                                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  const [media, setMedia] =
+    useState<MediaItem[]>([]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Submission                                                               */
+  /* ------------------------------------------------------------------------ */
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  const [showSuccess, setShowSuccess] =
+    useState(false);
+
+  /* ------------------------------------------------------------------------ */
+  /* Load resource                                                            */
+  /* ------------------------------------------------------------------------ */
+
+  async function loadResource() {
+    if (!resourceId) {
+      setLoading(false);
+      setLoadingError(
+        "Resource ID is missing.",
+      );
       return;
     }
 
-    async function loadResource() {
-      try {
-        setLoading(true);
-        setError("");
+    try {
+      setLoading(true);
+      setLoadingError("");
 
-        const response =
-          await getAdminResource(id);
+      const response =
+        await getAdminResource(resourceId);
 
-        const data = response.data;
+      const resource =
+        response.data;
 
-        setResource(data);
-
-        setTitle(data.title);
-        setSlug(data.slug);
-        setDescription(
-          data.description ?? "",
-        );
-        setContent(data.content ?? "");
-        setType(data.type);
-        setSpeaker(
-          data.speaker ?? "",
-        );
-        setFeatured(data.featured);
-        setPublished(data.published);
-
-        setMedia(
-          (data.media ?? []).map(
-            (item) => ({
-              id: item.id,
-              type: item.type,
-              provider: item.provider,
-              title: item.title ?? "",
-              url: item.url ?? "",
-              storageKey:
-                item.storageKey ?? "",
-              externalId:
-                item.externalId ?? "",
-              mimeType:
-                item.mimeType ?? "",
-              duration:
-                item.duration
-                  ? String(item.duration)
-                  : "",
-            }),
-          ),
-        );
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Unable to load resource.",
-        );
-      } finally {
-        setLoading(false);
-      }
+      populateResource(resource);
+    } catch (error) {
+      setLoadingError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load resource.",
+      );
+    } finally {
+      setLoading(false);
     }
+  }
 
+  /* ------------------------------------------------------------------------ */
+  /* Load categories                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  async function loadCategories() {
+    try {
+      setCategoriesLoading(true);
+      setCategoriesError("");
+
+      const response =
+        await getAdminCategories();
+
+      setCategories(
+        response.data ?? [],
+      );
+    } catch (error) {
+      setCategoriesError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load categories.",
+      );
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Initial load                                                             */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
     loadResource();
-  }, [id]);
+    loadCategories();
+  }, [resourceId]);
 
-  function updateMedia(
-    index: number,
-    changes: Partial<MediaForm>,
+  /* ------------------------------------------------------------------------ */
+  /* Populate resource                                                        */
+  /* ------------------------------------------------------------------------ */
+
+  function populateResource(
+    resource: AdminResource,
   ) {
-    setMedia((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index
-          ? {
-              ...item,
-              ...changes,
-            }
-          : item,
+    setTitle(
+      resource.title ?? "",
+    );
+
+    setSlug(
+      resource.slug ?? "",
+    );
+
+    setDescription(
+      resource.description ?? "",
+    );
+
+    setContent(
+      resource.content ?? "",
+    );
+
+    setType(
+      resource.type ?? "SERMON",
+    );
+
+    setSpeaker(
+      resource.speaker ?? "",
+    );
+
+    setFeatured(
+      Boolean(resource.featured),
+    );
+
+    setPublished(
+      Boolean(resource.published),
+    );
+
+    /*
+     * Convert the backend category relationship
+     * into the simple list of category IDs
+     * required by the update endpoint.
+     */
+    const categoryIds = (
+      resource.categories ?? []
+    )
+      .map(
+        (item) =>
+          item.categoryId ??
+          item.category?.id,
+      )
+      .filter(
+        (
+          id,
+        ): id is string =>
+          Boolean(id),
+      );
+
+    setSelectedCategoryIds(
+      categoryIds,
+    );
+
+    /*
+     * Preserve existing media IDs.
+     *
+     * New media added from this screen won't
+     * have an ID until the backend creates it.
+     */
+    setMedia(
+      (resource.media ?? []).map(
+        (item) => ({
+          id: item.id,
+          type: item.type,
+          provider: item.provider,
+          title: item.title ?? "",
+          url: item.url ?? "",
+          externalId:
+            item.externalId ?? "",
+        }),
       ),
     );
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Slug                                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  function generateSlug(
+    value: string,
+  ) {
+    return value
+      .toLowerCase()
+      .trim()
+      .replace(
+        /[^a-z0-9\s-]/g,
+        "",
+      )
+      .replace(
+        /\s+/g,
+        "-",
+      )
+      .replace(
+        /-+/g,
+        "-",
+      );
+  }
+
+  function handleTitleChange(
+    value: string,
+  ) {
+    setTitle(value);
+
+    /*
+     * Only generate a slug automatically if
+     * the resource currently doesn't have one.
+     *
+     * This prevents changing the title from
+     * unexpectedly changing an existing public URL.
+     */
+    if (!slug.trim()) {
+      setSlug(
+        generateSlug(value),
+      );
+    }
+  }
+
+  function handleSlugChange(
+    value: string,
+  ) {
+    setSlug(
+      generateSlug(value),
+    );
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Categories                                                               */
+  /* ------------------------------------------------------------------------ */
+
+  function toggleCategory(
+    categoryId: string,
+  ) {
+    setSelectedCategoryIds(
+      (current) =>
+        current.includes(categoryId)
+          ? current.filter(
+              (id) =>
+                id !== categoryId,
+            )
+          : [
+              ...current,
+              categoryId,
+            ],
+    );
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Media                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   function addMedia() {
     setMedia((current) => [
@@ -278,15 +389,32 @@ export default function EditResourcePage() {
         provider: "YOUTUBE",
         title: "",
         url: "",
-        storageKey: "",
         externalId: "",
-        mimeType: "",
-        duration: "",
       },
     ]);
   }
 
-  function removeMedia(index: number) {
+  function updateMedia(
+    index: number,
+    field: keyof MediaItem,
+    value: string,
+  ) {
+    setMedia((current) =>
+      current.map(
+        (item, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...item,
+                [field]: value,
+              }
+            : item,
+      ),
+    );
+  }
+
+  function removeMedia(
+    index: number,
+  ) {
     setMedia((current) =>
       current.filter(
         (_, itemIndex) =>
@@ -295,74 +423,173 @@ export default function EditResourcePage() {
     );
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Media validation                                                         */
+  /* ------------------------------------------------------------------------ */
+
+  function validateMedia() {
+    for (
+      let index = 0;
+      index < media.length;
+      index++
+    ) {
+      const item = media[index];
+
+      /*
+       * Completely empty media blocks are ignored
+       * during submission, so they don't need to
+       * produce an error.
+       */
+      if (
+        !item.url.trim() &&
+        !item.externalId.trim()
+      ) {
+        continue;
+      }
+
+      if (
+        item.provider === "YOUTUBE" &&
+        !item.url.trim() &&
+        !item.externalId.trim()
+      ) {
+        return `Media ${index + 1}: Please provide a YouTube URL or video ID.`;
+      }
+
+      if (
+        item.provider !== "YOUTUBE" &&
+        !item.url.trim()
+      ) {
+        return `Media ${index + 1}: Please provide a media URL.`;
+      }
+    }
+
+    return "";
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Submit                                                                   */
+  /* ------------------------------------------------------------------------ */
+
   async function handleSubmit(
-    event: React.FormEvent<HTMLFormElement>,
+    event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
-    if (!id) {
+    setError("");
+
+    const trimmedTitle =
+      title.trim();
+
+    const trimmedSlug =
+      slug.trim();
+
+    if (!trimmedTitle) {
+      setError(
+        "Please enter a resource title.",
+      );
+      return;
+    }
+
+    if (!trimmedSlug) {
+      setError(
+        "Please enter a resource slug.",
+      );
+      return;
+    }
+
+    if (!resourceId) {
+      setError(
+        "Resource ID is missing.",
+      );
+      return;
+    }
+
+    const mediaError =
+      validateMedia();
+
+    if (mediaError) {
+      setError(mediaError);
       return;
     }
 
     try {
       setSaving(true);
-      setError("");
-      setSuccess(false);
 
-      const payload: UpdateResourceInput = {
-        title: title.trim(),
-        slug: slug.trim(),
+      /*
+       * Empty media blocks are intentionally
+       * removed before sending the payload.
+       */
+      const cleanedMedia =
+        media
+          .filter(
+            (item) =>
+              item.url.trim() ||
+              item.externalId.trim(),
+          )
+          .map((item) => ({
+            type: item.type,
+            provider: item.provider,
+
+            title:
+              item.title.trim() ||
+              undefined,
+
+            url:
+              item.url.trim() ||
+              undefined,
+
+            externalId:
+              item.externalId.trim() ||
+              undefined,
+          }));
+
+      const input: CreateResourceInput = {
+        title: trimmedTitle,
+
+        slug: trimmedSlug,
+
         description:
-          description.trim() || undefined,
+          description.trim() ||
+          undefined,
+
         content:
-          content.trim() || undefined,
+          content.trim() ||
+          undefined,
+
         type,
+
         speaker:
-          speaker.trim() || undefined,
+          speaker.trim() ||
+          undefined,
+
         featured,
+
         published,
-        media: media.map((item) => ({
-          id: item.id,
-          type: item.type,
-          provider: item.provider,
-          title:
-            item.title.trim() || undefined,
-          url:
-            item.url.trim() || undefined,
-          storageKey:
-            item.storageKey.trim() ||
-            undefined,
-          externalId:
-            item.externalId.trim() ||
-            undefined,
-          mimeType:
-            item.mimeType.trim() ||
-            undefined,
-          duration:
-            item.duration.trim()
-              ? Number(item.duration)
-              : undefined,
-        })),
+
+        categoryIds:
+          selectedCategoryIds,
+
+        /*
+         * Tags are intentionally omitted.
+         *
+         * This edit screen does not manage tags.
+         * Therefore we don't send an empty array
+         * that could accidentally clear existing tags.
+         */
+
+        media: cleanedMedia,
       };
 
-      const response =
-        await updateResource(
-          id,
-          payload,
-        );
+      await updateResource(
+        resourceId,
+        input,
+      );
 
-      setResource(response.data);
-      setSuccess(true);
-
-      setTimeout(() => {
-        router.push(
-          "/admin/dashboard/resources",
-        );
-      }, 900);
-    } catch (err) {
+      setShowSuccess(true);
+    } catch (error) {
       setError(
-        err instanceof Error
-          ? err.message
+        error instanceof Error
+          ? error.message
           : "Unable to update resource.",
       );
     } finally {
@@ -370,24 +597,76 @@ export default function EditResourcePage() {
     }
   }
 
-  if (loading) {
-    return <LoadingState />;
+  /* ------------------------------------------------------------------------ */
+  /* Success                                                                  */
+  /* ------------------------------------------------------------------------ */
+
+  function handleSuccessClose() {
+    setShowSuccess(false);
+
+    router.push(
+      "/admin/dashboard/resources",
+    );
   }
 
-  if (error && !resource) {
+  /* ------------------------------------------------------------------------ */
+  /* Loading                                                                  */
+  /* ------------------------------------------------------------------------ */
+
+  if (loading) {
     return (
-      <main className="min-h-screen bg-ivory text-charcoal">
-        <div className="mx-auto flex min-h-screen max-w-3xl items-center justify-center px-6">
-          <div className="w-full border border-red-500/15 bg-white p-10 text-center">
-            <p className="text-sm text-red-600">
-              {error}
-            </p>
+      <main className="flex min-h-screen items-center justify-center bg-ivory text-charcoal">
+        <div className="flex items-center gap-3 text-sm text-charcoal/45">
+          <Loader2
+            size={18}
+            className="animate-spin text-bronze"
+          />
+
+          Loading resource...
+        </div>
+      </main>
+    );
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Loading error                                                            */
+  /* ------------------------------------------------------------------------ */
+
+  if (loadingError) {
+    return (
+      <main className="min-h-screen bg-ivory px-6 py-10 text-charcoal">
+        <div className="mx-auto max-w-xl border border-red-500/15 bg-white p-8">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-red-500">
+            Resource Error
+          </p>
+
+          <h1 className="mt-2 text-2xl font-medium">
+            Unable to load resource
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-charcoal/45">
+            {loadingError}
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={loadResource}
+              className="inline-flex items-center gap-2 bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
+            >
+              <Loader2
+                size={14}
+              />
+              Try Again
+            </button>
 
             <Link
               href="/admin/dashboard/resources"
-              className="mt-6 inline-flex items-center gap-2 border border-charcoal/10 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors hover:border-bronze hover:text-bronze"
+              className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/60 transition-colors hover:border-charcoal/20 hover:text-charcoal"
             >
-              <ArrowLeft size={14} />
+              <ArrowLeft
+                size={14}
+              />
               Back to Resources
             </Link>
           </div>
@@ -398,91 +677,62 @@ export default function EditResourcePage() {
 
   return (
     <main className="min-h-screen bg-ivory text-charcoal">
+      {/* ------------------------------------------------------------------ */}
+      {/* Header                                                             */}
+      {/* ------------------------------------------------------------------ */}
+
       <header className="border-b border-charcoal/10 bg-white">
-        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-6 px-6 py-6 lg:px-10">
+        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-6 lg:px-10">
           <div>
             <Link
               href="/admin/dashboard/resources"
-              className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/45 transition-colors hover:text-bronze"
+              className="mb-4 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/45 transition-colors hover:text-bronze"
             >
-              <ArrowLeft size={13} />
+              <ArrowLeft size={14} />
               Back to Resources
             </Link>
 
-            <div className="mt-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bronze">
-                Content Management
-              </p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bronze">
+              Content Management
+            </p>
 
-              <h1 className="display-heading mt-2 text-3xl sm:text-4xl">
-                Edit Resource
-              </h1>
+            <h1 className="display-heading mt-2 text-3xl sm:text-4xl">
+              Edit Resource
+            </h1>
 
-              {resource && (
-                <p className="mt-2 text-xs text-charcoal/40">
-                  Editing "{resource.title}"
-                </p>
-              )}
-            </div>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-charcoal/45">
+              Update the resource details,
+              organization, publishing status,
+              and attached media.
+            </p>
           </div>
-
-          <button
-            type="submit"
-            form="edit-resource-form"
-            disabled={saving}
-            className="inline-flex items-center gap-2 bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? (
-              <Loader2
-                size={14}
-                className="animate-spin"
-              />
-            ) : (
-              <Save size={14} />
-            )}
-
-            {saving
-              ? "Saving..."
-              : "Save Changes"}
-          </button>
         </div>
       </header>
 
       <div className="mx-auto w-full max-w-[1400px] px-6 py-8 lg:px-10 lg:py-12">
-        {error && (
-          <div className="mb-8 flex items-start justify-between gap-4 border border-red-500/15 bg-red-500/[0.03] px-5 py-4 text-sm text-red-600">
-            <span>{error}</span>
-
-            <button
-              type="button"
-              onClick={() => setError("")}
-              className="shrink-0"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-8 flex items-center gap-3 border border-green-500/15 bg-green-500/[0.04] px-5 py-4 text-sm text-green-700">
-            <Check size={17} />
-            Resource updated successfully. Redirecting...
-          </div>
-        )}
-
         <form
-          id="edit-resource-form"
           onSubmit={handleSubmit}
           className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
-          <div className="space-y-8">
-            <section className="border border-charcoal/10 bg-white">
-              <SectionHeading
-                title="Basic Information"
-                description="Core information displayed across the ministry resource library."
-              />
+          {/* ---------------------------------------------------------------- */}
+          {/* Main content                                                     */}
+          {/* ---------------------------------------------------------------- */}
 
-              <div className="space-y-6 p-6 lg:p-8">
+          <div className="space-y-8">
+            {/* Basic Information */}
+
+            <section className="border border-charcoal/10 bg-white">
+              <div className="border-b border-charcoal/10 px-6 py-5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Basic Information
+                </p>
+
+                <h2 className="mt-2 text-xl font-medium">
+                  Resource details
+                </h2>
+              </div>
+
+              <div className="space-y-6 p-6">
                 <Field
                   label="Title"
                   required
@@ -490,31 +740,75 @@ export default function EditResourcePage() {
                   <input
                     value={title}
                     onChange={(event) =>
-                      setTitle(
+                      handleTitleChange(
                         event.target.value,
                       )
                     }
+                    placeholder="Walking in Purpose"
+                    className="input"
                     required
-                    className={inputClass}
                   />
                 </Field>
 
                 <Field
                   label="Slug"
                   required
-                  hint="Used in the public resource URL."
+                  hint="Used in the public resource URL. Changing this may change the public URL."
                 >
                   <input
                     value={slug}
                     onChange={(event) =>
-                      setSlug(
+                      handleSlugChange(
                         event.target.value,
                       )
                     }
+                    placeholder="walking-in-purpose"
+                    className="input"
                     required
-                    className={inputClass}
                   />
                 </Field>
+
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <Field
+                    label="Resource Type"
+                    required
+                  >
+                    <select
+                      value={type}
+                      onChange={(event) =>
+                        setType(
+                          event.target
+                            .value as ResourceType,
+                        )
+                      }
+                      className="input"
+                    >
+                      {resourceTypes.map(
+                        (item) => (
+                          <option
+                            key={item.value}
+                            value={item.value}
+                          >
+                            {item.label}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </Field>
+
+                  <Field label="Speaker">
+                    <input
+                      value={speaker}
+                      onChange={(event) =>
+                        setSpeaker(
+                          event.target.value,
+                        )
+                      }
+                      placeholder="Pastor Olawale Smith"
+                      className="input"
+                    />
+                  </Field>
+                </div>
 
                 <Field label="Description">
                   <textarea
@@ -524,14 +818,15 @@ export default function EditResourcePage() {
                         event.target.value,
                       )
                     }
+                    placeholder="Brief description of this resource..."
                     rows={5}
-                    className={`${inputClass} resize-y py-3`}
+                    className="input resize-y"
                   />
                 </Field>
 
                 <Field
                   label="Article / Resource Content"
-                  hint="For articles and written resources."
+                  hint="For articles and written resources, write the content here."
                 >
                   <textarea
                     value={content}
@@ -540,118 +835,456 @@ export default function EditResourcePage() {
                         event.target.value,
                       )
                     }
-                    rows={14}
-                    className={`${inputClass} resize-y py-3`}
                     placeholder="Write the resource content here..."
+                    rows={14}
+                    className="input resize-y"
                   />
                 </Field>
               </div>
             </section>
 
-            <section className="border border-charcoal/10 bg-white">
-              <SectionHeading
-                title="Media"
-                description="Attach YouTube videos, audio, PDFs, images or external resources."
-              />
+            {/* Categories */}
 
-              <div className="p-6 lg:p-8">
+            <section className="border border-charcoal/10 bg-white">
+              <div className="border-b border-charcoal/10 px-6 py-5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Organization
+                </p>
+
+                <h2 className="mt-2 text-xl font-medium">
+                  Categories
+                </h2>
+
+                <p className="mt-1 text-xs text-charcoal/40">
+                  Assign one or more categories
+                  to organize this resource.
+                </p>
+              </div>
+
+              <div className="p-6">
+                {categoriesLoading ? (
+                  <div className="flex items-center gap-3 py-6 text-sm text-charcoal/40">
+                    <Loader2
+                      size={16}
+                      className="animate-spin"
+                    />
+
+                    Loading categories...
+                  </div>
+                ) : categoriesError ? (
+                  <div className="border border-red-500/15 bg-red-500/[0.03] p-4">
+                    <p className="text-sm text-red-600">
+                      {categoriesError}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={loadCategories}
+                      className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : categories.length ===
+                  0 ? (
+                  <div className="border border-dashed border-charcoal/10 px-5 py-8 text-center">
+                    <p className="text-sm text-charcoal/45">
+                      No categories have been
+                      created yet.
+                    </p>
+
+                    <p className="mt-2 text-[11px] leading-5 text-charcoal/35">
+                      Create categories from
+                      the Categories section of
+                      the admin dashboard.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {categories.map(
+                      (category) => {
+                        const selected =
+                          selectedCategoryIds.includes(
+                            category.id,
+                          );
+
+                        return (
+                          <button
+                            key={category.id}
+                            type="button"
+                            onClick={() =>
+                              toggleCategory(
+                                category.id,
+                              )
+                            }
+                            className={[
+                              "flex items-start gap-3 border p-4 text-left transition-all",
+                              selected
+                                ? "border-bronze bg-bronze/[0.06]"
+                                : "border-charcoal/10 hover:border-bronze/40",
+                            ].join(" ")}
+                          >
+                            <span
+                              className={[
+                                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border transition-colors",
+                                selected
+                                  ? "border-bronze bg-bronze text-ivory"
+                                  : "border-charcoal/20 bg-white",
+                              ].join(" ")}
+                            >
+                              {selected && (
+                                <Check
+                                  size={11}
+                                  strokeWidth={
+                                    2.5
+                                  }
+                                />
+                              )}
+                            </span>
+
+                            <span className="min-w-0">
+                              <span className="block text-xs font-medium">
+                                {
+                                  category.name
+                                }
+                              </span>
+
+                              <span className="mt-1 block truncate text-[10px] text-charcoal/35">
+                                /
+                                {
+                                  category.slug
+                                }
+                              </span>
+
+                              {category.description && (
+                                <span className="mt-2 block line-clamp-2 text-[11px] leading-5 text-charcoal/40">
+                                  {
+                                    category.description
+                                  }
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      },
+                    )}
+                  </div>
+                )}
+
+                {selectedCategoryIds.length >
+                  0 && (
+                  <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze">
+                    {
+                      selectedCategoryIds.length
+                    }{" "}
+                    {selectedCategoryIds.length ===
+                    1
+                      ? "category"
+                      : "categories"}{" "}
+                    selected
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {/* Media */}
+
+            <section className="border border-charcoal/10 bg-white">
+              <div className="flex items-center justify-between border-b border-charcoal/10 px-6 py-5">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                    Media
+                  </p>
+
+                  <h2 className="mt-2 text-xl font-medium">
+                    Attach media
+                  </h2>
+
+                  <p className="mt-1 text-xs text-charcoal/40">
+                    Add YouTube links, audio
+                    URLs, PDFs, or other media.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={addMedia}
+                  className="inline-flex items-center gap-2 border border-charcoal/10 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors hover:border-bronze hover:text-bronze"
+                >
+                  <Plus size={14} />
+                  Add Media
+                </button>
+              </div>
+
+              <div className="p-6">
                 {media.length === 0 ? (
-                  <div className="border border-dashed border-charcoal/15 px-6 py-10 text-center">
-                    <FileText
+                  <div className="border border-dashed border-charcoal/10 px-6 py-12 text-center">
+                    <Video
                       size={24}
                       strokeWidth={1.2}
                       className="mx-auto text-charcoal/20"
                     />
 
                     <p className="mt-4 text-sm text-charcoal/45">
-                      No media attached.
+                      No media attached yet.
                     </p>
+
+                    <button
+                      type="button"
+                      onClick={addMedia}
+                      className="mt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze hover:underline"
+                    >
+                      Add your first media
+                    </button>
                   </div>
                 ) : (
                   <div className="space-y-5">
                     {media.map(
                       (item, index) => (
-                        <MediaCard
+                        <div
                           key={
                             item.id ??
-                            `media-${index}`
+                            `new-${index}`
                           }
-                          item={item}
-                          index={index}
-                          onChange={
-                            updateMedia
-                          }
-                          onRemove={
-                            removeMedia
-                          }
-                        />
+                          className="border border-charcoal/10 p-5"
+                        >
+                          <div className="mb-5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center bg-bronze/10 text-bronze">
+                                {item.type ===
+                                "AUDIO" ? (
+                                  <Headphones
+                                    size={16}
+                                  />
+                                ) : (
+                                  <Video
+                                    size={16}
+                                  />
+                                )}
+                              </div>
+
+                              <div>
+                                <p className="text-xs font-medium">
+                                  Media{" "}
+                                  {index + 1}
+                                </p>
+
+                                <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-charcoal/35">
+                                  {item.type}
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeMedia(
+                                  index,
+                                )
+                              }
+                              className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
+                              aria-label={`Remove media ${index + 1}`}
+                            >
+                              <Trash2
+                                size={15}
+                              />
+                            </button>
+                          </div>
+
+                          <div className="grid gap-5 sm:grid-cols-2">
+                            <Field label="Media Type">
+                              <select
+                                value={
+                                  item.type
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  updateMedia(
+                                    index,
+                                    "type",
+                                    event
+                                      .target
+                                      .value,
+                                  )
+                                }
+                                className="input"
+                              >
+                                {mediaTypes.map(
+                                  (
+                                    mediaType,
+                                  ) => (
+                                    <option
+                                      key={
+                                        mediaType.value
+                                      }
+                                      value={
+                                        mediaType.value
+                                      }
+                                    >
+                                      {
+                                        mediaType.label
+                                      }
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </Field>
+
+                            <Field label="Provider">
+                              <select
+                                value={
+                                  item.provider
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  updateMedia(
+                                    index,
+                                    "provider",
+                                    event
+                                      .target
+                                      .value,
+                                  )
+                                }
+                                className="input"
+                              >
+                                {mediaProviders.map(
+                                  (
+                                    provider,
+                                  ) => (
+                                    <option
+                                      key={
+                                        provider.value
+                                      }
+                                      value={
+                                        provider.value
+                                      }
+                                    >
+                                      {
+                                        provider.label
+                                      }
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </Field>
+                          </div>
+
+                          <div className="mt-5">
+                            <Field label="Media Title">
+                              <input
+                                value={
+                                  item.title
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  updateMedia(
+                                    index,
+                                    "title",
+                                    event
+                                      .target
+                                      .value,
+                                  )
+                                }
+                                placeholder="Walking in Purpose — Full Sermon"
+                                className="input"
+                              />
+                            </Field>
+                          </div>
+
+                          <div className="mt-5">
+                            <Field
+                              label="URL"
+                              hint={
+                                item.provider ===
+                                "YOUTUBE"
+                                  ? "Paste the full YouTube URL."
+                                  : "Paste the direct URL for this media."
+                              }
+                            >
+                              <input
+                                type="url"
+                                value={
+                                  item.url
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  updateMedia(
+                                    index,
+                                    "url",
+                                    event
+                                      .target
+                                      .value,
+                                  )
+                                }
+                                placeholder={
+                                  item.provider ===
+                                  "YOUTUBE"
+                                    ? "https://youtu.be/..."
+                                    : "https://..."
+                                }
+                                className="input"
+                              />
+                            </Field>
+                          </div>
+
+                          {item.provider ===
+                            "YOUTUBE" && (
+                            <div className="mt-5">
+                              <Field
+                                label="YouTube Video ID"
+                                hint="Optional if the YouTube URL is already provided."
+                              >
+                                <input
+                                  value={
+                                    item.externalId
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    updateMedia(
+                                      index,
+                                      "externalId",
+                                      event
+                                        .target
+                                        .value,
+                                    )
+                                  }
+                                  placeholder="XyCHesmYev0"
+                                  className="input"
+                                />
+                              </Field>
+                            </div>
+                          )}
+                        </div>
                       ),
                     )}
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={addMedia}
-                  className="mt-5 inline-flex items-center gap-2 border border-charcoal/10 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors hover:border-bronze hover:text-bronze"
-                >
-                  <Plus size={14} />
-                  Add Media
-                </button>
               </div>
             </section>
           </div>
 
-          <aside className="space-y-8">
+          {/* ---------------------------------------------------------------- */}
+          {/* Sidebar                                                           */}
+          {/* ---------------------------------------------------------------- */}
+
+          <aside className="space-y-6">
             <section className="border border-charcoal/10 bg-white">
-              <SectionHeading
-                title="Publishing"
-                description="Control how this resource appears publicly."
-              />
+              <div className="border-b border-charcoal/10 px-6 py-5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Publishing
+                </p>
+
+                <h2 className="mt-2 text-xl font-medium">
+                  Visibility
+                </h2>
+              </div>
 
               <div className="space-y-5 p-6">
-                <Field
-                  label="Resource Type"
-                  required
-                >
-                  <select
-                    value={type}
-                    onChange={(event) =>
-                      setType(
-                        event.target
-                          .value as ResourceType,
-                      )
-                    }
-                    className={inputClass}
-                  >
-                    {resourceTypes.map(
-                      (item) => (
-                        <option
-                          key={item.value}
-                          value={
-                            item.value
-                          }
-                        >
-                          {item.label}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </Field>
-
-                <Field label="Speaker">
-                  <input
-                    value={speaker}
-                    onChange={(event) =>
-                      setSpeaker(
-                        event.target.value,
-                      )
-                    }
-                    className={inputClass}
-                    placeholder="Pastor Olawale Smith"
-                  />
-                </Field>
-
                 <Toggle
                   label="Published"
                   description="Make this resource visible on the public website."
@@ -668,263 +1301,109 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            <section className="border border-charcoal/10 bg-white p-6">
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-bronze/10 text-bronze">
-                  <FileText size={16} />
-                </div>
+            {/* Selected categories */}
 
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/35">
-                    Resource ID
-                  </p>
+            {selectedCategoryIds.length >
+              0 && (
+              <section className="border border-charcoal/10 bg-white p-6">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Organization
+                </p>
 
-                  <p className="mt-2 break-all text-xs text-charcoal/55">
-                    {id}
-                  </p>
+                <h2 className="mt-2 text-sm font-medium">
+                  Selected categories
+                </h2>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {categories
+                    .filter((category) =>
+                      selectedCategoryIds.includes(
+                        category.id,
+                      ),
+                    )
+                    .map((category) => (
+                      <span
+                        key={category.id}
+                        className="inline-flex items-center gap-1.5 bg-bronze/10 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze"
+                      >
+                        {category.name}
+                      </span>
+                    ))}
                 </div>
+              </section>
+            )}
+
+            {/* Error */}
+
+            {error && (
+              <div className="border border-red-500/15 bg-red-500/[0.03] p-5">
+                <p className="text-sm leading-6 text-red-600">
+                  {error}
+                </p>
               </div>
-            </section>
+            )}
 
-            <Link
-              href="/admin/dashboard/resources"
-              className="flex items-center justify-center gap-2 border border-charcoal/10 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors hover:border-charcoal/25"
-            >
-              <ArrowLeft size={14} />
-              Cancel
-            </Link>
+            {/* Actions */}
+
+            <section className="border border-charcoal/10 bg-white p-6">
+              <button
+                type="submit"
+                disabled={saving}
+                className="group flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? (
+                  <>
+                    <Loader2
+                      size={15}
+                      className="animate-spin"
+                    />
+
+                    Saving Changes...
+                  </>
+                ) : (
+                  <>
+                    <Check size={15} />
+
+                    Save Changes
+
+                    <ArrowUpRight
+                      size={14}
+                      className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                    />
+                  </>
+                )}
+              </button>
+
+              <Link
+                href="/admin/dashboard/resources"
+                className="mt-3 flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/55 transition-colors hover:border-charcoal/20 hover:text-charcoal"
+              >
+                <X size={14} />
+                Cancel
+              </Link>
+            </section>
           </aside>
         </form>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Success Dialog                                                      */}
+      {/* ------------------------------------------------------------------ */}
+
+      {showSuccess && (
+        <SuccessDialog
+          onContinue={
+            handleSuccessClose
+          }
+        />
+      )}
     </main>
   );
 }
 
-function MediaCard({
-  item,
-  index,
-  onChange,
-  onRemove,
-}: {
-  item: MediaForm;
-  index: number;
-  onChange: (
-    index: number,
-    changes: Partial<MediaForm>,
-  ) => void;
-  onRemove: (index: number) => void;
-}) {
-  const Icon =
-    item.type === "VIDEO"
-      ? Video
-      : item.type === "AUDIO"
-        ? Headphones
-        : item.type === "PDF"
-          ? BookOpen
-          : FileText;
-
-  return (
-    <div className="border border-charcoal/10 p-5">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center bg-bronze/10 text-bronze">
-            <Icon size={16} />
-          </div>
-
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/35">
-              Media {index + 1}
-            </p>
-
-            <p className="mt-1 text-xs text-charcoal/45">
-              {item.provider}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() =>
-            onRemove(index)
-          }
-          className="flex h-8 w-8 items-center justify-center text-red-500/60 transition-colors hover:bg-red-50 hover:text-red-600"
-          aria-label="Remove media"
-        >
-          <Trash2 size={15} />
-        </button>
-      </div>
-
-      <div className="mt-5 grid gap-5 sm:grid-cols-2">
-        <Field label="Media Type">
-          <select
-            value={item.type}
-            onChange={(event) =>
-              onChange(index, {
-                type: event.target
-                  .value as MediaType,
-              })
-            }
-            className={inputClass}
-          >
-            {mediaTypes.map(
-              (mediaType) => (
-                <option
-                  key={mediaType.value}
-                  value={
-                    mediaType.value
-                  }
-                >
-                  {mediaType.label}
-                </option>
-              ),
-            )}
-          </select>
-        </Field>
-
-        <Field label="Provider">
-          <select
-            value={item.provider}
-            onChange={(event) =>
-              onChange(index, {
-                provider:
-                  event.target
-                    .value as MediaProvider,
-              })
-            }
-            className={inputClass}
-          >
-            {mediaProviders.map(
-              (provider) => (
-                <option
-                  key={provider.value}
-                  value={
-                    provider.value
-                  }
-                >
-                  {provider.label}
-                </option>
-              ),
-            )}
-          </select>
-        </Field>
-      </div>
-
-      <div className="mt-5 space-y-5">
-        <Field label="Title">
-          <input
-            value={item.title}
-            onChange={(event) =>
-              onChange(index, {
-                title:
-                  event.target.value,
-              })
-            }
-            className={inputClass}
-            placeholder="Media title"
-          />
-        </Field>
-
-        <Field
-          label="URL"
-          hint="YouTube link, PDF URL, audio URL, etc."
-        >
-          <input
-            value={item.url}
-            onChange={(event) =>
-              onChange(index, {
-                url: event.target.value,
-              })
-            }
-            className={inputClass}
-            placeholder="https://..."
-          />
-        </Field>
-
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="External ID">
-            <input
-              value={item.externalId}
-              onChange={(event) =>
-                onChange(index, {
-                  externalId:
-                    event.target.value,
-                })
-              }
-              className={inputClass}
-              placeholder="YouTube video ID"
-            />
-          </Field>
-
-          <Field label="Storage Key">
-            <input
-              value={item.storageKey}
-              onChange={(event) =>
-                onChange(index, {
-                  storageKey:
-                    event.target.value,
-                })
-              }
-              className={inputClass}
-              placeholder="Optional"
-            />
-          </Field>
-        </div>
-
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="MIME Type">
-            <input
-              value={item.mimeType}
-              onChange={(event) =>
-                onChange(index, {
-                  mimeType:
-                    event.target.value,
-                })
-              }
-              className={inputClass}
-              placeholder="application/pdf"
-            />
-          </Field>
-
-          <Field label="Duration (seconds)">
-            <input
-              type="number"
-              min="0"
-              value={item.duration}
-              onChange={(event) =>
-                onChange(index, {
-                  duration:
-                    event.target.value,
-                })
-              }
-              className={inputClass}
-              placeholder="3600"
-            />
-          </Field>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionHeading({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="border-b border-charcoal/10 px-6 py-5 lg:px-8">
-      <h2 className="text-sm font-medium">
-        {title}
-      </h2>
-
-      <p className="mt-1 text-xs leading-5 text-charcoal/40">
-        {description}
-      </p>
-    </div>
-  );
-}
+/* -------------------------------------------------------------------------- */
+/* Field                                                                      */
+/* -------------------------------------------------------------------------- */
 
 function Field({
   label,
@@ -939,7 +1418,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/50">
+      <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/50">
         {label}
 
         {required && (
@@ -949,16 +1428,22 @@ function Field({
         )}
       </label>
 
-      {children}
-
       {hint && (
-        <p className="mt-2 text-[11px] leading-5 text-charcoal/35">
+        <p className="mt-1 text-[11px] leading-5 text-charcoal/35">
           {hint}
         </p>
       )}
+
+      <div className="mt-2">
+        {children}
+      </div>
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Toggle                                                                     */
+/* -------------------------------------------------------------------------- */
 
 function Toggle({
   label,
@@ -969,21 +1454,17 @@ function Toggle({
   label: string;
   description: string;
   checked: boolean;
-  onChange: (
-    checked: boolean,
-  ) => void;
+  onChange: (value: boolean) => void;
 }) {
   return (
     <button
       type="button"
-      onClick={() =>
-        onChange(!checked)
-      }
-      className="flex w-full items-start gap-4 border border-charcoal/10 p-4 text-left transition-colors hover:border-bronze/30"
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-start gap-4 text-left"
     >
       <span
         className={[
-          "relative mt-0.5 flex h-5 w-9 shrink-0 rounded-full transition-colors",
+          "relative mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
           checked
             ? "bg-bronze"
             : "bg-charcoal/15",
@@ -991,9 +1472,9 @@ function Toggle({
       >
         <span
           className={[
-            "absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white shadow-sm transition-transform",
+            "absolute h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform",
             checked
-              ? "translate-x-[19px]"
+              ? "translate-x-[17px]"
               : "translate-x-[3px]",
           ].join(" ")}
         />
@@ -1012,24 +1493,50 @@ function Toggle({
   );
 }
 
-function LoadingState() {
-  return (
-    <main className="min-h-screen bg-ivory text-charcoal">
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <Loader2
-            size={25}
-            className="mx-auto animate-spin text-bronze"
-          />
+/* -------------------------------------------------------------------------- */
+/* Success Dialog                                                             */
+/* -------------------------------------------------------------------------- */
 
-          <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.15em] text-charcoal/40">
-            Loading resource
+function SuccessDialog({
+  onContinue,
+}: {
+  onContinue: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/40 px-6 backdrop-blur-sm">
+      <div className="w-full max-w-md border border-charcoal/10 bg-white p-8 shadow-2xl">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 text-green-600">
+          <Check
+            size={25}
+            strokeWidth={2}
+          />
+        </div>
+
+        <div className="mt-6 text-center">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-bronze">
+            Resource Updated
+          </p>
+
+          <h2 className="mt-2 text-2xl font-medium tracking-tight">
+            Successfully updated
+          </h2>
+
+          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-charcoal/45">
+            The resource has been
+            successfully updated in your
+            ministry library.
           </p>
         </div>
+
+        <button
+          type="button"
+          onClick={onContinue}
+          className="mt-8 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
+        >
+          Continue to Resources
+          <ArrowUpRight size={14} />
+        </button>
       </div>
-    </main>
+    </div>
   );
 }
-
-const inputClass =
-  "h-11 w-full border border-charcoal/10 bg-ivory px-3 text-sm text-charcoal outline-none transition-all placeholder:text-charcoal/25 focus:border-bronze/50 focus:ring-2 focus:ring-bronze/10";

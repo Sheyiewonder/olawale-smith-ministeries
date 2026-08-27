@@ -7,6 +7,7 @@ import { getResources } from "@/lib/api";
 interface ResourcesPageProps {
   searchParams: Promise<{
     type?: string;
+    category?: string;
     search?: string;
   }>;
 }
@@ -25,6 +26,8 @@ export default async function ResourcesPage({
       | "PODCAST"
       | "ARTICLE"
       | undefined,
+
+    category: params.category,
 
     search: params.search,
   });

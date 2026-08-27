@@ -17,6 +17,7 @@ import {
   Star,
   Eye,
   RefreshCw,
+  FolderTree,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -33,6 +34,13 @@ type ResourceType =
   | "VIDEO"
   | "PODCAST"
   | "ARTICLE";
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+}
 
 const filters: {
   label: string;
@@ -85,13 +93,25 @@ export default function AdminResourcesPage() {
     AdminResource[]
   >([]);
 
+  const [categories, setCategories] = useState<
+    Category[]
+  >([]);
+
   const [loading, setLoading] = useState(true);
+  const [categoriesLoading, setCategoriesLoading] =
+    useState(true);
+
   const [error, setError] = useState("");
+  const [categoryError, setCategoryError] =
+    useState("");
 
   const [search, setSearch] = useState("");
 
   const [activeFilter, setActiveFilter] =
     useState<"ALL" | ResourceType>("ALL");
+
+  const [activeCategory, setActiveCategory] =
+    useState<string>("ALL");
 
   const [menuId, setMenuId] = useState<
     string | null
@@ -119,8 +139,40 @@ export default function AdminResourcesPage() {
     }
   }
 
+  async function loadCategories() {
+    try {
+      setCategoriesLoading(true);
+      setCategoryError("");
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/categories`,
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Unable to load categories.",
+        );
+      }
+
+      const result: {
+        data: Category[];
+      } = await response.json();
+
+      setCategories(result.data ?? []);
+    } catch (error) {
+      setCategoryError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load categories.",
+      );
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadResources();
+    loadCategories();
   }, []);
 
   const filteredResources = useMemo(() => {
@@ -130,6 +182,13 @@ export default function AdminResourcesPage() {
       const matchesType =
         activeFilter === "ALL" ||
         resource.type === activeFilter;
+
+      const matchesCategory =
+        activeCategory === "ALL" ||
+        resource.categories?.some(
+          (item) =>
+            item.category.id === activeCategory,
+        );
 
       const matchesSearch =
         !query ||
@@ -141,11 +200,26 @@ export default function AdminResourcesPage() {
           .includes(query) ||
         resource.description
           ?.toLowerCase()
-          .includes(query);
+          .includes(query) ||
+        resource.categories?.some(
+          (item) =>
+            item.category.name
+              .toLowerCase()
+              .includes(query),
+        );
 
-      return matchesType && matchesSearch;
+      return (
+        matchesType &&
+        matchesCategory &&
+        matchesSearch
+      );
     });
-  }, [resources, search, activeFilter]);
+  }, [
+    resources,
+    search,
+    activeFilter,
+    activeCategory,
+  ]);
 
   const publishedCount = resources.filter(
     (resource) => resource.published,
@@ -271,7 +345,7 @@ export default function AdminResourcesPage() {
         {/* ---------------------------------------------------------------- */}
 
         <div className="mt-10">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="relative w-full max-w-2xl">
               <Search
                 size={17}
@@ -292,14 +366,17 @@ export default function AdminResourcesPage() {
 
             <button
               type="button"
-              onClick={loadResources}
-              disabled={loading}
+              onClick={() => {
+                loadResources();
+                loadCategories();
+              }}
+              disabled={loading || categoriesLoading}
               className="inline-flex h-12 shrink-0 items-center justify-center gap-2 border border-charcoal/10 bg-white px-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-charcoal/50 transition-colors hover:border-bronze/40 hover:text-bronze disabled:cursor-not-allowed disabled:opacity-40"
             >
               <RefreshCw
                 size={14}
                 className={
-                  loading
+                  loading || categoriesLoading
                     ? "animate-spin"
                     : ""
                 }
@@ -309,6 +386,7 @@ export default function AdminResourcesPage() {
             </button>
           </div>
 
+          {/* Resource Type Filters */}
           <div className="mt-5 flex gap-2 overflow-x-auto pb-2 scrollbar-none">
             {filters.map((filter) => {
               const active =
@@ -337,7 +415,114 @@ export default function AdminResourcesPage() {
               );
             })}
           </div>
+
+          {/* Category Filters */}
+          {categories.length > 0 && (
+            <div className="mt-6">
+              <div className="mb-3 flex items-center gap-2">
+                <FolderTree
+                  size={13}
+                  className="text-bronze"
+                />
+
+                <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-charcoal/35">
+                  Categories
+                </p>
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+                <CategoryFilterButton
+                  active={
+                    activeCategory === "ALL"
+                  }
+                  onClick={() =>
+                    setActiveCategory("ALL")
+                  }
+                >
+                  All Categories
+                </CategoryFilterButton>
+
+                {categories.map(
+                  (category) => (
+                    <CategoryFilterButton
+                      key={category.id}
+                      active={
+                        activeCategory ===
+                        category.id
+                      }
+                      onClick={() =>
+                        setActiveCategory(
+                          category.id,
+                        )
+                      }
+                    >
+                      {category.name}
+                    </CategoryFilterButton>
+                  ),
+                )}
+              </div>
+            </div>
+          )}
+
+          {categoryError && (
+            <p className="mt-3 text-[11px] text-red-500">
+              {categoryError}
+            </p>
+          )}
         </div>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Active Filters Summary                                           */}
+        {/* ---------------------------------------------------------------- */}
+
+        {(activeFilter !== "ALL" ||
+          activeCategory !== "ALL" ||
+          search.trim()) && (
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.12em] text-charcoal/35">
+              Showing
+            </span>
+
+            {activeFilter !== "ALL" && (
+              <FilterBadge>
+                {
+                  typeConfig[activeFilter]
+                    .label
+                }
+              </FilterBadge>
+            )}
+
+            {activeCategory !== "ALL" && (
+              <FilterBadge>
+                {
+                  categories.find(
+                    (category) =>
+                      category.id ===
+                      activeCategory,
+                  )?.name
+                }
+              </FilterBadge>
+            )}
+
+            {search.trim() && (
+              <FilterBadge>
+                "{search.trim()}"
+              </FilterBadge>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setActiveFilter("ALL");
+                setActiveCategory("ALL");
+              }}
+              className="ml-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-charcoal/35 hover:text-bronze"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         {/* ---------------------------------------------------------------- */}
         {/* Content                                                         */}
@@ -355,7 +540,8 @@ export default function AdminResourcesPage() {
             <EmptyState
               hasSearch={
                 Boolean(search.trim()) ||
-                activeFilter !== "ALL"
+                activeFilter !== "ALL" ||
+                activeCategory !== "ALL"
               }
             />
           ) : (
@@ -370,6 +556,54 @@ export default function AdminResourcesPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Category Filter Button                                                     */
+/* -------------------------------------------------------------------------- */
+
+function CategoryFilterButton({
+  children,
+  active,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "shrink-0 inline-flex items-center gap-2 border px-4 py-2.5",
+        "text-[10px] font-semibold uppercase tracking-[0.12em]",
+        "transition-all duration-200",
+        active
+          ? "border-charcoal bg-charcoal text-ivory"
+          : "border-charcoal/10 bg-white text-charcoal/50 hover:border-bronze/40 hover:text-bronze",
+      ].join(" ")}
+    >
+      <FolderTree size={12} />
+      {children}
+    </button>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Filter Badge                                                               */
+/* -------------------------------------------------------------------------- */
+
+function FilterBadge({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="border border-bronze/20 bg-bronze/5 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze">
+      {children}
+    </span>
   );
 }
 
@@ -422,12 +656,14 @@ function ResourceTable({
     <div className="overflow-visible border border-charcoal/10 bg-white">
       {/* Desktop */}
       <div className="hidden lg:block">
-        <div className="grid grid-cols-[minmax(300px,1fr)_140px_140px_120px_60px] border-b border-charcoal/10 bg-charcoal/[0.025] px-6 py-4">
+        <div className="grid grid-cols-[minmax(300px,1fr)_140px_220px_140px_120px_60px] border-b border-charcoal/10 bg-charcoal/[0.025] px-6 py-4">
           <HeaderCell>
             Resource
           </HeaderCell>
 
           <HeaderCell>Type</HeaderCell>
+
+          <HeaderCell>Categories</HeaderCell>
 
           <HeaderCell>Status</HeaderCell>
 
@@ -445,7 +681,7 @@ function ResourceTable({
           return (
             <div
               key={resource.id}
-              className="grid min-h-[92px] grid-cols-[minmax(300px,1fr)_140px_140px_120px_60px] items-center border-b border-charcoal/10 px-6 last:border-b-0"
+              className="grid min-h-[92px] grid-cols-[minmax(300px,1fr)_140px_220px_140px_120px_60px] items-center border-b border-charcoal/10 px-6 last:border-b-0"
             >
               {/* Resource */}
               <div className="min-w-0 pr-8">
@@ -483,6 +719,11 @@ function ResourceTable({
                   {config.label}
                 </span>
               </div>
+
+              {/* Categories */}
+              <CategoryList
+                resource={resource}
+              />
 
               {/* Status */}
               <div>
@@ -576,6 +817,11 @@ function ResourceTable({
                     )}
                   </div>
 
+                  <CategoryList
+                    resource={resource}
+                    mobile
+                  />
+
                   <p className="mt-3 text-[11px] text-charcoal/35">
                     Created{" "}
                     {formatDate(
@@ -606,6 +852,54 @@ function ResourceTable({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Category List                                                              */
+/* -------------------------------------------------------------------------- */
+
+function CategoryList({
+  resource,
+  mobile = false,
+}: {
+  resource: AdminResource;
+  mobile?: boolean;
+}) {
+  const categories =
+    resource.categories ?? [];
+
+  if (categories.length === 0) {
+    return (
+      <span className="text-[10px] text-charcoal/25">
+        Uncategorized
+      </span>
+    );
+  }
+
+  return (
+    <div
+      className={[
+        "flex flex-wrap gap-1.5",
+        mobile ? "mt-4" : "",
+      ].join(" ")}
+    >
+      {categories.slice(0, 3).map((item) => (
+        <span
+          key={item.category.id}
+          className="inline-flex items-center gap-1 border border-charcoal/10 bg-charcoal/[0.02] px-2 py-1 text-[9px] font-medium uppercase tracking-[0.08em] text-charcoal/45"
+        >
+          <FolderTree size={9} />
+          {item.category.name}
+        </span>
+      ))}
+
+      {categories.length > 3 && (
+        <span className="px-1 py-1 text-[9px] text-charcoal/30">
+          +{categories.length - 3}
+        </span>
+      )}
     </div>
   );
 }
@@ -648,7 +942,6 @@ function ActionMenu({
 
       {open && (
         <div className="absolute right-0 top-10 z-30 w-48 border border-charcoal/10 bg-white p-1 shadow-xl">
-          {/* Edit */}
           <Link
             href={`/admin/dashboard/resources/${resource.id}/edit`}
             onClick={() => setOpen(false)}
@@ -658,7 +951,6 @@ function ActionMenu({
             Edit resource
           </Link>
 
-          {/* View */}
           <Link
             href={`/resources/${resource.slug}`}
             target="_blank"
@@ -671,7 +963,6 @@ function ActionMenu({
 
           <div className="my-1 border-t border-charcoal/10" />
 
-          {/* Delete */}
           <button
             type="button"
             disabled={deleting}
