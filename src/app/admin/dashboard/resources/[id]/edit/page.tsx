@@ -25,7 +25,7 @@ import {
   updateResource,
   type AdminCategory,
   type AdminResource,
-  type CreateResourceInput,
+  type UpdateResourceInput,
   type ResourceType,
   type MediaType,
   type MediaProvider,
@@ -67,9 +67,9 @@ const mediaProviders: {
   label: string;
 }[] = [
   { value: "YOUTUBE", label: "YouTube" },
-  { value: "EXTERNAL", label: "External URL" },
-  { value: "R2", label: "Cloudflare R2" },
+  { value: "CLOUDINARY", label: "Cloudinary" },
   { value: "SUPABASE", label: "Supabase Storage" },
+  { value: "EXTERNAL", label: "External URL" },
 ];
 
 export default function EditResourcePage() {
@@ -91,11 +91,15 @@ export default function EditResourcePage() {
   const [loadingError, setLoadingError] =
     useState("");
 
-  const [categoriesLoading, setCategoriesLoading] =
-    useState(true);
+  const [
+    categoriesLoading,
+    setCategoriesLoading,
+  ] = useState(true);
 
-  const [categoriesError, setCategoriesError] =
-    useState("");
+  const [
+    categoriesError,
+    setCategoriesError,
+  ] = useState("");
 
   /* ------------------------------------------------------------------------ */
   /* Resource                                                                 */
@@ -260,11 +264,6 @@ export default function EditResourcePage() {
       Boolean(resource.published),
     );
 
-    /*
-     * Convert the backend category relationship
-     * into the simple list of category IDs
-     * required by the update endpoint.
-     */
     const categoryIds = (
       resource.categories ?? []
     )
@@ -284,12 +283,6 @@ export default function EditResourcePage() {
       categoryIds,
     );
 
-    /*
-     * Preserve existing media IDs.
-     *
-     * New media added from this screen won't
-     * have an ID until the backend creates it.
-     */
     setMedia(
       (resource.media ?? []).map(
         (item) => ({
@@ -334,13 +327,6 @@ export default function EditResourcePage() {
   ) {
     setTitle(value);
 
-    /*
-     * Only generate a slug automatically if
-     * the resource currently doesn't have one.
-     *
-     * This prevents changing the title from
-     * unexpectedly changing an existing public URL.
-     */
     if (!slug.trim()) {
       setSlug(
         generateSlug(value),
@@ -435,11 +421,6 @@ export default function EditResourcePage() {
     ) {
       const item = media[index];
 
-      /*
-       * Completely empty media blocks are ignored
-       * during submission, so they don't need to
-       * produce an error.
-       */
       if (
         !item.url.trim() &&
         !item.externalId.trim()
@@ -515,10 +496,6 @@ export default function EditResourcePage() {
     try {
       setSaving(true);
 
-      /*
-       * Empty media blocks are intentionally
-       * removed before sending the payload.
-       */
       const cleanedMedia =
         media
           .filter(
@@ -543,7 +520,7 @@ export default function EditResourcePage() {
               undefined,
           }));
 
-      const input: CreateResourceInput = {
+      const input: UpdateResourceInput = {
         title: trimmedTitle,
 
         slug: trimmedSlug,
@@ -568,14 +545,6 @@ export default function EditResourcePage() {
 
         categoryIds:
           selectedCategoryIds,
-
-        /*
-         * Tags are intentionally omitted.
-         *
-         * This edit screen does not manage tags.
-         * Therefore we don't send an empty array
-         * that could accidentally clear existing tags.
-         */
 
         media: cleanedMedia,
       };
@@ -1301,8 +1270,6 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {/* Selected categories */}
-
             {selectedCategoryIds.length >
               0 && (
               <section className="border border-charcoal/10 bg-white p-6">
@@ -1333,8 +1300,6 @@ export default function EditResourcePage() {
               </section>
             )}
 
-            {/* Error */}
-
             {error && (
               <div className="border border-red-500/15 bg-red-500/[0.03] p-5">
                 <p className="text-sm leading-6 text-red-600">
@@ -1342,8 +1307,6 @@ export default function EditResourcePage() {
                 </p>
               </div>
             )}
-
-            {/* Actions */}
 
             <section className="border border-charcoal/10 bg-white p-6">
               <button
