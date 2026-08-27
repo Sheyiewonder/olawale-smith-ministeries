@@ -147,11 +147,19 @@ export interface ResourceQuery {
 /* Get Categories                                                             */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Fetch public resource categories.
+ *
+ * Categories are cached for one hour because they change
+ * much less frequently than resources.
+ */
 export async function getCategories(): Promise<Category[]> {
   const response = await fetch(
     `${API_URL}/categories`,
     {
-      cache: "no-store",
+      next: {
+        revalidate: 3600,
+      },
     },
   );
 
@@ -274,8 +282,9 @@ export async function getResourceBySlug(
     );
   }
 
-  const result: { data: Resource } =
-    await response.json();
+  const result: {
+    data: Resource;
+  } = await response.json();
 
   return result.data;
 }
