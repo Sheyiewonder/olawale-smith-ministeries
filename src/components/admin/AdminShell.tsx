@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Library,
+  FolderOpen,
   Settings,
   LogOut,
   Menu,
@@ -12,6 +13,7 @@ import {
   ChevronRight,
   ShieldCheck,
 } from "lucide-react";
+
 import { useEffect, useState } from "react";
 
 import {
@@ -30,6 +32,11 @@ const navigation = [
     label: "Resources",
     href: "/admin/dashboard/resources",
     icon: Library,
+  },
+  {
+    label: "Categories",
+    href: "/admin/dashboard/categories",
+    icon: FolderOpen,
   },
   {
     label: "Settings",
@@ -153,10 +160,10 @@ export default function AdminShell({
               const Icon = item.icon;
 
               const active =
-                pathname === item.href ||
-                pathname.startsWith(
-                  `${item.href}/`,
-                );
+                item.href === "/admin/dashboard"
+                  ? pathname === "/admin/dashboard"
+                  : pathname === item.href ||
+                    pathname.startsWith(`${item.href}/`);
 
               return (
                 <Link
