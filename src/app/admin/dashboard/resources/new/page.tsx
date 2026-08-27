@@ -6,16 +6,21 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
+  FileText,
   Headphones,
+  Image as ImageIcon,
   Loader2,
   Plus,
   Trash2,
+  Upload,
   Video,
   X,
 } from "lucide-react";
 import {
   FormEvent,
+  type ReactNode,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -23,6 +28,7 @@ import {
   createResource,
   getAdminCategories,
   getAdminSeries,
+  uploadAdminMedia,
   type AdminCategory,
   type AdminSeries,
   type CreateResourceInput,
@@ -39,8 +45,19 @@ interface MediaItem {
   type: MediaType;
   provider: MediaProvider;
   title: string;
+
   url: string;
+  storageKey: string;
   externalId: string;
+
+  mimeType: string;
+  fileSize: string;
+  duration?: number;
+
+  source: "UPLOAD" | "EXTERNAL";
+
+  file?: File;
+  uploading?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -104,26 +121,81 @@ const mediaTypes: {
 ];
 
 /* -------------------------------------------------------------------------- */
-/* Media Providers                                                            */
+/* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const mediaProviders: {
-  value: MediaProvider;
-  label: string;
-}[] = [
-  {
-    value: "YOUTUBE",
-    label: "YouTube",
-  },
-  {
-    value: "CLOUDINARY",
-    label: "Cloudinary",
-  },
-  {
-    value: "EXTERNAL",
-    label: "External URL",
-  },
-];
+function getUploadType(
+  type: MediaType,
+): "AUDIO" | "PDF" | "IMAGE" | null {
+  if (
+    type === "AUDIO" ||
+    type === "PDF" ||
+    type === "IMAGE"
+  ) {
+    return type;
+  }
+
+  return null;
+}
+
+function getAcceptedFileTypes(
+  type: MediaType,
+): string {
+  switch (type) {
+    case "AUDIO":
+      return [
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/ogg",
+        "audio/mp4",
+        "audio/aac",
+        "audio/webm",
+      ].join(",");
+
+    case "PDF":
+      return "application/pdf";
+
+    case "IMAGE":
+      return "image/jpeg,image/png,image/webp";
+
+    case "VIDEO":
+      return "";
+
+    default:
+      return "";
+  }
+}
+
+function getExternalProvider(
+  type: MediaType,
+): MediaProvider {
+  if (type === "VIDEO") {
+    return "YOUTUBE";
+  }
+
+  return "EXTERNAL";
+}
+
+function getMediaIcon(
+  type: MediaType,
+) {
+  switch (type) {
+    case "AUDIO":
+      return Headphones;
+
+    case "PDF":
+      return FileText;
+
+    case "IMAGE":
+      return ImageIcon;
+
+    case "VIDEO":
+    default:
+      return Video;
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /* Page                                                                       */
@@ -178,7 +250,7 @@ export default function NewResourcePage() {
     useState<AdminSeries[]>([]);
 
   const [selectedSeriesId, setSelectedSeriesId] =
-    useState<string>("");
+    useState("");
 
   const [seriesLoading, setSeriesLoading] =
     useState(true);
@@ -192,6 +264,11 @@ export default function NewResourcePage() {
 
   const [media, setMedia] =
     useState<MediaItem[]>([]);
+
+  const fileInputRefs =
+    useRef<
+      Record<number, HTMLInputElement | null>
+    >({});
 
   /* ------------------------------------------------------------------------ */
   /* Submission                                                               */
@@ -367,41 +444,42 @@ export default function NewResourcePage() {
   /* ------------------------------------------------------------------------ */
 
   function addMedia() {
-    setMedia(
-      (current) => [
-        ...current,
-        {
-          type: "VIDEO",
-          provider: "YOUTUBE",
-          title: "",
-          url: "",
-          externalId: "",
-        },
-      ],
-    );
+    setMedia((current) => [
+      ...current,
+      {
+        type: "VIDEO",
+        provider: "YOUTUBE",
+        title: "",
+        url: "",
+        storageKey: "",
+        externalId: "",
+        mimeType: "",
+        fileSize: "",
+        source: "EXTERNAL",
+      },
+    ]);
   }
 
   function updateMedia(
     index: number,
     field: keyof MediaItem,
-    value: string,
+    value:
+      | string
+      | File
+      | number
+      | boolean
+      | undefined,
   ) {
-    setMedia(
-      (current) =>
-        current.map(
-          (
-            item,
-            itemIndex,
-          ) =>
-            itemIndex ===
-            index
-              ? {
-                  ...item,
-                  [field]:
-                    value,
-                }
-              : item,
-        ),
+    setMedia((current) =>
+      current.map(
+        (item, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...item,
+                [field]: value,
+              }
+            : item,
+      ),
     );
   }
 
@@ -419,6 +497,317 @@ export default function NewResourcePage() {
             index,
         ),
     );
+
+    delete fileInputRefs.current[
+      index
+    ];
+  }
+
+  function switchMediaSource(
+    index: number,
+    source: "UPLOAD" | "EXTERNAL",
+  ) {
+    const item = media[index];
+
+    if (!item) {
+      return;
+    }
+
+    if (
+      source === "UPLOAD"
+    ) {
+      const uploadType =
+        getUploadType(
+          item.type,
+        );
+
+      if (!uploadType) {
+        setError(
+          "Video files cannot be uploaded from the device yet. Please use an external YouTube URL for videos.",
+        );
+
+        return;
+      }
+    }
+
+    setError("");
+
+    setMedia((current) =>
+      current.map(
+        (mediaItem, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...mediaItem,
+
+                source,
+
+                provider:
+                  source === "UPLOAD"
+                    ? "CLOUDINARY"
+                    : getExternalProvider(
+                        mediaItem.type,
+                      ),
+
+                url:
+                  source === "UPLOAD"
+                    ? mediaItem.url
+                    : "",
+
+                storageKey:
+                  source === "UPLOAD"
+                    ? mediaItem.storageKey
+                    : "",
+
+                externalId:
+                  source === "EXTERNAL"
+                    ? mediaItem.type ===
+                      "VIDEO"
+                      ? mediaItem.externalId
+                      : ""
+                    : "",
+
+                mimeType:
+                  source === "UPLOAD"
+                    ? mediaItem.mimeType
+                    : "",
+
+                fileSize:
+                  source === "UPLOAD"
+                    ? mediaItem.fileSize
+                    : "",
+
+                duration:
+                  source === "UPLOAD"
+                    ? mediaItem.duration
+                    : undefined,
+
+                file:
+                  source === "EXTERNAL"
+                    ? undefined
+                    : mediaItem.file,
+
+                uploading: false,
+              }
+            : mediaItem,
+      ),
+    );
+  }
+
+  function handleMediaTypeChange(
+    index: number,
+    value: MediaType,
+  ) {
+    const currentItem =
+      media[index];
+
+    if (!currentItem) {
+      return;
+    }
+
+    const uploadSupported =
+      Boolean(
+        getUploadType(value),
+      );
+
+    setError("");
+
+    setMedia((current) =>
+      current.map(
+        (item, itemIndex) => {
+          if (
+            itemIndex !== index
+          ) {
+            return item;
+          }
+
+          const nextSource =
+            item.source ===
+              "UPLOAD" &&
+            !uploadSupported
+              ? "EXTERNAL"
+              : item.source;
+
+          return {
+            ...item,
+
+            type: value,
+
+            source:
+              nextSource,
+
+            provider:
+              nextSource ===
+              "UPLOAD"
+                ? "CLOUDINARY"
+                : getExternalProvider(
+                    value,
+                  ),
+
+            url:
+              nextSource ===
+              "UPLOAD"
+                ? item.url
+                : "",
+
+            storageKey:
+              nextSource ===
+              "UPLOAD"
+                ? item.storageKey
+                : "",
+
+            externalId:
+              nextSource ===
+              "EXTERNAL" &&
+              value === "VIDEO"
+                ? item.externalId
+                : "",
+
+            mimeType:
+              nextSource ===
+              "UPLOAD"
+                ? item.mimeType
+                : "",
+
+            fileSize:
+              nextSource ===
+              "UPLOAD"
+                ? item.fileSize
+                : "",
+
+            duration:
+              nextSource ===
+              "UPLOAD"
+                ? item.duration
+                : undefined,
+
+            file:
+              nextSource ===
+              "UPLOAD"
+                ? item.file
+                : undefined,
+
+            uploading: false,
+          };
+        },
+      ),
+    );
+  }
+
+  async function handleMediaFile(
+    index: number,
+    file: File,
+  ) {
+    const item = media[index];
+
+    if (!item) {
+      return;
+    }
+
+    const uploadType =
+      getUploadType(item.type);
+
+    if (!uploadType) {
+      setError(
+        "Video files cannot be uploaded from the device yet. Please use an external URL for videos.",
+      );
+
+      return;
+    }
+
+    try {
+      setError("");
+
+      setMedia((current) =>
+        current.map(
+          (
+            mediaItem,
+            itemIndex,
+          ) =>
+            itemIndex === index
+              ? {
+                  ...mediaItem,
+                  uploading: true,
+                  file,
+                }
+              : mediaItem,
+        ),
+      );
+
+      const response =
+        await uploadAdminMedia(
+          file,
+          uploadType,
+        );
+
+      const uploaded =
+        response.data;
+
+      setMedia((current) =>
+        current.map(
+          (
+            mediaItem,
+            itemIndex,
+          ) =>
+            itemIndex === index
+              ? {
+                  ...mediaItem,
+
+                  source: "UPLOAD",
+
+                  provider:
+                    "CLOUDINARY",
+
+                  url:
+                    uploaded.secureUrl,
+
+                  storageKey:
+                    uploaded.publicId,
+
+                  mimeType:
+                    file.type,
+
+                  fileSize:
+                    String(
+                      uploaded.bytes,
+                    ),
+
+                  duration:
+                    uploaded.duration,
+
+                  title:
+                    mediaItem.title ||
+                    uploaded.originalFilename,
+
+                  file: undefined,
+
+                  uploading: false,
+                }
+              : mediaItem,
+        ),
+      );
+    } catch (error) {
+      setMedia((current) =>
+        current.map(
+          (
+            mediaItem,
+            itemIndex,
+          ) =>
+            itemIndex === index
+              ? {
+                  ...mediaItem,
+                  uploading: false,
+                  file: undefined,
+                }
+              : mediaItem,
+        ),
+      );
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload media.",
+      );
+    }
   }
 
   /* ------------------------------------------------------------------------ */
@@ -448,6 +837,19 @@ export default function NewResourcePage() {
     if (!trimmedSlug) {
       setError(
         "Please enter a resource slug.",
+      );
+      return;
+    }
+
+    const mediaStillUploading =
+      media.some(
+        (item) =>
+          item.uploading,
+      );
+
+    if (mediaStillUploading) {
+      setError(
+        "Please wait for all media uploads to finish before creating the resource.",
       );
       return;
     }
@@ -496,27 +898,40 @@ export default function NewResourcePage() {
                 item.url.trim() ||
                 item.externalId.trim(),
             )
-            .map(
-              (item) => ({
-                type:
-                  item.type,
+            .map((item) => ({
+              type:
+                item.type,
 
-                provider:
-                  item.provider,
+              provider:
+                item.provider,
 
-                title:
-                  item.title.trim() ||
-                  undefined,
+              title:
+                item.title.trim() ||
+                undefined,
 
-                url:
-                  item.url.trim() ||
-                  undefined,
+              url:
+                item.url.trim() ||
+                undefined,
 
-                externalId:
-                  item.externalId.trim() ||
-                  undefined,
-              }),
-            ),
+              storageKey:
+                item.storageKey.trim() ||
+                undefined,
+
+              externalId:
+                item.externalId.trim() ||
+                undefined,
+
+              mimeType:
+                item.mimeType.trim() ||
+                undefined,
+
+              fileSize:
+                item.fileSize.trim() ||
+                undefined,
+
+              duration:
+                item.duration,
+            })),
         };
 
       await createResource(
@@ -615,8 +1030,7 @@ export default function NewResourcePage() {
                     value={title}
                     onChange={(event) =>
                       handleTitleChange(
-                        event.target
-                          .value,
+                        event.target.value,
                       )
                     }
                     placeholder="Walking in Purpose"
@@ -634,8 +1048,7 @@ export default function NewResourcePage() {
                     value={slug}
                     onChange={(event) =>
                       setSlug(
-                        event.target
-                          .value,
+                        event.target.value,
                       )
                     }
                     placeholder="walking-in-purpose"
@@ -683,8 +1096,7 @@ export default function NewResourcePage() {
                       value={speaker}
                       onChange={(event) =>
                         setSpeaker(
-                          event.target
-                            .value,
+                          event.target.value,
                         )
                       }
                       placeholder="Pastor Olawale Smith"
@@ -700,8 +1112,7 @@ export default function NewResourcePage() {
                     }
                     onChange={(event) =>
                       setDescription(
-                        event.target
-                          .value,
+                        event.target.value,
                       )
                     }
                     placeholder="Brief description of this resource..."
@@ -718,8 +1129,7 @@ export default function NewResourcePage() {
                     value={content}
                     onChange={(event) =>
                       setContent(
-                        event.target
-                          .value,
+                        event.target.value,
                       )
                     }
                     placeholder="Write the resource content here..."
@@ -912,8 +1322,7 @@ export default function NewResourcePage() {
                       }
                       onChange={(event) =>
                         setSelectedSeriesId(
-                          event.target
-                            .value,
+                          event.target.value,
                         )
                       }
                       className="input"
@@ -957,10 +1366,9 @@ export default function NewResourcePage() {
                   </h2>
 
                   <p className="mt-1 text-xs text-charcoal/40">
-                    Add YouTube links,
-                    Cloudinary media,
-                    PDFs, or external
-                    media.
+                    Upload media from your
+                    device or use an
+                    externally hosted URL.
                   </p>
                 </div>
 
@@ -982,9 +1390,7 @@ export default function NewResourcePage() {
                   <div className="border border-dashed border-charcoal/10 px-6 py-12 text-center">
                     <Video
                       size={24}
-                      strokeWidth={
-                        1.2
-                      }
+                      strokeWidth={1.2}
                       className="mx-auto text-charcoal/20"
                     />
 
@@ -1010,68 +1416,73 @@ export default function NewResourcePage() {
                       (
                         item,
                         index,
-                      ) => (
-                        <div
-                          key={
-                            index
-                          }
-                          className="border border-charcoal/10 p-5"
-                        >
-                          <div className="mb-5 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center bg-bronze/10 text-bronze">
-                                {item.type ===
-                                "AUDIO" ? (
-                                  <Headphones
+                      ) => {
+                        const Icon =
+                          getMediaIcon(
+                            item.type,
+                          );
+
+                        const uploadSupported =
+                          Boolean(
+                            getUploadType(
+                              item.type,
+                            ),
+                          );
+
+                        return (
+                          <div
+                            key={
+                              index
+                            }
+                            className="border border-charcoal/10 p-5"
+                          >
+                            {/* Media Header */}
+                            <div className="mb-5 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-9 w-9 items-center justify-center bg-bronze/10 text-bronze">
+                                  <Icon
                                     size={
                                       16
                                     }
                                   />
-                                ) : (
-                                  <Video
-                                    size={
-                                      16
+                                </div>
+
+                                <div>
+                                  <p className="text-xs font-medium">
+                                    Media{" "}
+                                    {
+                                      index +
+                                      1
                                     }
-                                  />
-                                )}
+                                  </p>
+
+                                  <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-charcoal/35">
+                                    {
+                                      item.type
+                                    }
+                                  </p>
+                                </div>
                               </div>
 
-                              <div>
-                                <p className="text-xs font-medium">
-                                  Media{" "}
-                                  {
-                                    index +
-                                    1
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeMedia(
+                                    index,
+                                  )
+                                }
+                                className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
+                                aria-label="Remove media"
+                              >
+                                <Trash2
+                                  size={
+                                    15
                                   }
-                                </p>
-
-                                <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-charcoal/35">
-                                  {
-                                    item.type
-                                  }
-                                </p>
-                              </div>
+                                />
+                              </button>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeMedia(
-                                  index,
-                                )
-                              }
-                              className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
-                              aria-label="Remove media"
-                            >
-                              <Trash2
-                                size={
-                                  15
-                                }
-                              />
-                            </button>
-                          </div>
-
-                          <div className="grid gap-5 sm:grid-cols-2">
+                            {/* Media Type */}
                             <Field label="Media Type">
                               <select
                                 value={
@@ -1080,12 +1491,11 @@ export default function NewResourcePage() {
                                 onChange={(
                                   event,
                                 ) =>
-                                  updateMedia(
+                                  handleMediaTypeChange(
                                     index,
-                                    "type",
                                     event
                                       .target
-                                      .value,
+                                      .value as MediaType,
                                   )
                                 }
                                 className="input"
@@ -1111,165 +1521,368 @@ export default function NewResourcePage() {
                               </select>
                             </Field>
 
-                            <Field label="Provider">
-                              <select
-                                value={
-                                  item.provider
+                            {/* Media Title */}
+                            <div className="mt-5">
+                              <Field label="Media Title">
+                                <input
+                                  value={
+                                    item.title
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    updateMedia(
+                                      index,
+                                      "title",
+                                      event
+                                        .target
+                                        .value,
+                                    )
+                                  }
+                                  placeholder="Walking in Purpose — Full Sermon"
+                                  className="input"
+                                />
+                              </Field>
+                            </div>
+
+                            {/* Source Selector */}
+                            <div className="mt-6">
+                              <Field
+                                label="Media Source"
+                                hint={
+                                  item.type ===
+                                  "VIDEO"
+                                    ? "Videos are currently supported through external YouTube URLs."
+                                    : "Choose whether this media should be uploaded to Cloudinary or linked from an external source."
                                 }
-                                onChange={(
-                                  event,
-                                ) =>
-                                  updateMedia(
-                                    index,
-                                    "provider",
-                                    event
-                                      .target
-                                      .value,
-                                  )
-                                }
-                                className="input"
                               >
-                                {mediaProviders.map(
-                                  (
-                                    provider,
-                                  ) => (
-                                    <option
-                                      key={
-                                        provider.value
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      switchMediaSource(
+                                        index,
+                                        "UPLOAD",
+                                      )
+                                    }
+                                    disabled={
+                                      !uploadSupported ||
+                                      item.uploading
+                                    }
+                                    className={[
+                                      "flex items-start gap-3 border p-4 text-left transition-all",
+                                      item.source ===
+                                      "UPLOAD"
+                                        ? "border-bronze bg-bronze/[0.06]"
+                                        : "border-charcoal/10 hover:border-bronze/40",
+                                      !uploadSupported
+                                        ? "cursor-not-allowed opacity-40 hover:border-charcoal/10"
+                                        : "",
+                                    ].join(
+                                      " ",
+                                    )}
+                                  >
+                                    <Upload
+                                      size={
+                                        17
                                       }
-                                      value={
-                                        provider.value
+                                      className="mt-0.5 shrink-0 text-bronze"
+                                    />
+
+                                    <span>
+                                      <span className="block text-xs font-medium">
+                                        Upload from device
+                                      </span>
+
+                                      <span className="mt-1 block text-[10px] leading-4 text-charcoal/40">
+                                        {uploadSupported
+                                          ? "Upload directly to Cloudinary."
+                                          : "Not available for video files yet."}
+                                      </span>
+                                    </span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      switchMediaSource(
+                                        index,
+                                        "EXTERNAL",
+                                      )
+                                    }
+                                    disabled={
+                                      item.uploading
+                                    }
+                                    className={[
+                                      "flex items-start gap-3 border p-4 text-left transition-all",
+                                      item.source ===
+                                      "EXTERNAL"
+                                        ? "border-bronze bg-bronze/[0.06]"
+                                        : "border-charcoal/10 hover:border-bronze/40",
+                                    ].join(
+                                      " ",
+                                    )}
+                                  >
+                                    <ArrowUpRight
+                                      size={
+                                        17
                                       }
-                                    >
+                                      className="mt-0.5 shrink-0 text-bronze"
+                                    />
+
+                                    <span>
+                                      <span className="block text-xs font-medium">
+                                        Use external URL
+                                      </span>
+
+                                      <span className="mt-1 block text-[10px] leading-4 text-charcoal/40">
+                                        Link to externally hosted media.
+                                      </span>
+                                    </span>
+                                  </button>
+                                </div>
+                              </Field>
+                            </div>
+
+                            {/* Upload */}
+                            {item.source ===
+                              "UPLOAD" && (
+                              <div className="mt-5">
+                                <input
+                                  ref={(
+                                    element,
+                                  ) => {
+                                    fileInputRefs.current[
+                                      index
+                                    ] =
+                                      element;
+                                  }}
+                                  type="file"
+                                  accept={getAcceptedFileTypes(
+                                    item.type,
+                                  )}
+                                  className="hidden"
+                                  onChange={(
+                                    event,
+                                  ) => {
+                                    const file =
+                                      event
+                                        .target
+                                        .files?.[0];
+
+                                    if (
+                                      file
+                                    ) {
+                                      handleMediaFile(
+                                        index,
+                                        file,
+                                      );
+                                    }
+
+                                    event.target.value =
+                                      "";
+                                  }}
+                                />
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    item.uploading
+                                  }
+                                  onClick={() =>
+                                    fileInputRefs.current[
+                                      index
+                                    ]?.click()
+                                  }
+                                  className="flex w-full items-center justify-center gap-3 border border-dashed border-charcoal/15 px-5 py-8 text-center transition-colors hover:border-bronze hover:bg-bronze/[0.03] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {item.uploading ? (
+                                    <>
+                                      <Loader2
+                                        size={
+                                          18
+                                        }
+                                        className="animate-spin text-bronze"
+                                      />
+
+                                      <span>
+                                        <span className="block text-xs font-medium">
+                                          Uploading media...
+                                        </span>
+
+                                        <span className="mt-1 block text-[10px] text-charcoal/40">
+                                          Please wait while the file is uploaded.
+                                        </span>
+                                      </span>
+                                    </>
+                                  ) : item.url ? (
+                                    <>
+                                      <Check
+                                        size={
+                                          18
+                                        }
+                                        className="text-green-600"
+                                      />
+
+                                      <span>
+                                        <span className="block text-xs font-medium">
+                                          Media uploaded successfully
+                                        </span>
+
+                                        <span className="mt-1 block text-[10px] text-charcoal/40">
+                                          Click to replace the uploaded file.
+                                        </span>
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload
+                                        size={
+                                          18
+                                        }
+                                        className="text-bronze"
+                                      />
+
+                                      <span>
+                                        <span className="block text-xs font-medium">
+                                          Choose a file
+                                        </span>
+
+                                        <span className="mt-1 block text-[10px] text-charcoal/40">
+                                          {item.type ===
+                                          "AUDIO"
+                                            ? "MP3, WAV, OGG, AAC, M4A or WebM"
+                                            : item.type ===
+                                              "PDF"
+                                              ? "PDF files only"
+                                              : "JPG, PNG or WebP"}
+                                        </span>
+                                      </span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {item.url && (
+                                  <div className="mt-3 border border-green-500/15 bg-green-500/[0.03] p-4">
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-green-700">
+                                      Cloudinary
+                                    </p>
+
+                                    <p className="mt-1 truncate text-xs text-charcoal/50">
                                       {
-                                        provider.label
+                                        item.url
                                       }
-                                    </option>
-                                  ),
+                                    </p>
+
+                                    {item.fileSize && (
+                                      <p className="mt-1 text-[10px] text-charcoal/35">
+                                        {
+                                          item.fileSize
+                                        }{" "}
+                                        bytes
+                                      </p>
+                                    )}
+                                  </div>
                                 )}
-                              </select>
-                            </Field>
+                              </div>
+                            )}
+
+                            {/* External URL */}
+                            {item.source ===
+                              "EXTERNAL" && (
+                              <div className="mt-5">
+                                <Field
+                                  label={
+                                    item.provider ===
+                                    "YOUTUBE"
+                                      ? "YouTube URL"
+                                      : "External URL"
+                                  }
+                                  hint={
+                                    item.provider ===
+                                    "YOUTUBE"
+                                      ? "Paste the full YouTube video URL."
+                                      : "Paste the public URL for this media."
+                                  }
+                                >
+                                  <input
+                                    type="url"
+                                    value={
+                                      item.url
+                                    }
+                                    onChange={(
+                                      event,
+                                    ) =>
+                                      updateMedia(
+                                        index,
+                                        "url",
+                                        event
+                                          .target
+                                          .value,
+                                      )
+                                    }
+                                    placeholder={
+                                      item.provider ===
+                                      "YOUTUBE"
+                                        ? "https://youtu.be/..."
+                                        : "https://..."
+                                    }
+                                    className="input"
+                                  />
+                                </Field>
+                              </div>
+                            )}
+
+                            {/* YouTube ID */}
+                            {item.source ===
+                              "EXTERNAL" &&
+                              item.provider ===
+                                "YOUTUBE" && (
+                                <div className="mt-5">
+                                  <Field
+                                    label="YouTube Video ID"
+                                    hint="Optional. This is the ID contained in the YouTube URL."
+                                  >
+                                    <input
+                                      value={
+                                        item.externalId
+                                      }
+                                      onChange={(
+                                        event,
+                                      ) =>
+                                        updateMedia(
+                                          index,
+                                          "externalId",
+                                          event
+                                            .target
+                                            .value,
+                                        )
+                                      }
+                                      placeholder="XyCHesmYev0"
+                                      className="input"
+                                    />
+                                  </Field>
+                                </div>
+                              )}
+
+                            {/* Upload Status */}
+                            {item.source ===
+                              "UPLOAD" &&
+                              item.provider ===
+                                "CLOUDINARY" &&
+                              item.url && (
+                                <div className="mt-5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-green-600">
+                                  <Check
+                                    size={
+                                      13
+                                    }
+                                  />
+                                  Stored in Cloudinary
+                                </div>
+                              )}
                           </div>
-
-                          <div className="mt-5">
-                            <Field label="Media Title">
-                              <input
-                                value={
-                                  item.title
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
-                                  updateMedia(
-                                    index,
-                                    "title",
-                                    event
-                                      .target
-                                      .value,
-                                  )
-                                }
-                                placeholder="Walking in Purpose — Full Sermon"
-                                className="input"
-                              />
-                            </Field>
-                          </div>
-
-                          <div className="mt-5">
-                            <Field
-                              label="URL"
-                              hint={
-                                item.provider ===
-                                "YOUTUBE"
-                                  ? "Paste the full YouTube video URL."
-                                  : "Paste the public URL for this media."
-                              }
-                            >
-                              <input
-                                type="url"
-                                value={
-                                  item.url
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
-                                  updateMedia(
-                                    index,
-                                    "url",
-                                    event
-                                      .target
-                                      .value,
-                                  )
-                                }
-                                placeholder={
-                                  item.provider ===
-                                  "YOUTUBE"
-                                    ? "https://youtu.be/..."
-                                    : "https://..."
-                                }
-                                className="input"
-                              />
-                            </Field>
-                          </div>
-
-                          {item.provider ===
-                            "YOUTUBE" && (
-                            <div className="mt-5">
-                              <Field
-                                label="YouTube Video ID"
-                                hint="Optional. This is the ID contained in the YouTube URL."
-                              >
-                                <input
-                                  value={
-                                    item.externalId
-                                  }
-                                  onChange={(
-                                    event,
-                                  ) =>
-                                    updateMedia(
-                                      index,
-                                      "externalId",
-                                      event
-                                        .target
-                                        .value,
-                                    )
-                                  }
-                                  placeholder="XyCHesmYev0"
-                                  className="input"
-                                />
-                              </Field>
-                            </div>
-                          )}
-
-                          {item.provider ===
-                            "CLOUDINARY" && (
-                            <div className="mt-5">
-                              <Field
-                                label="Cloudinary Public ID"
-                                hint="Optional. Useful when the backend needs to manage the Cloudinary asset."
-                              >
-                                <input
-                                  value={
-                                    item.externalId
-                                  }
-                                  onChange={(
-                                    event,
-                                  ) =>
-                                    updateMedia(
-                                      index,
-                                      "externalId",
-                                      event
-                                        .target
-                                        .value,
-                                    )
-                                  }
-                                  placeholder="ministry/sermons/walking-in-purpose"
-                                  className="input"
-                                />
-                              </Field>
-                            </div>
-                          )}
-                        </div>
-                      ),
+                        );
+                      },
                     )}
                   </div>
                 )}
@@ -1394,7 +2007,13 @@ export default function NewResourcePage() {
             <section className="border border-charcoal/10 bg-white p-6">
               <button
                 type="submit"
-                disabled={saving}
+                disabled={
+                  saving ||
+                  media.some(
+                    (item) =>
+                      item.uploading,
+                  )
+                }
                 className="group flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? (
@@ -1403,8 +2022,7 @@ export default function NewResourcePage() {
                       size={15}
                       className="animate-spin"
                     />
-                    Creating
-                    Resource...
+                    Creating Resource...
                   </>
                 ) : (
                   <>
@@ -1456,7 +2074,7 @@ function Field({
   label: string;
   required?: boolean;
   hint?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div>
@@ -1581,8 +2199,7 @@ function SuccessDialog({
           }
           className="mt-8 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
         >
-          Continue to
-          Resources
+          Continue to Resources
           <ArrowUpRight
             size={14}
           />

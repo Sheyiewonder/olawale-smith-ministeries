@@ -6,18 +6,16 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
+  FileText,
   Headphones,
+  Image as ImageIcon,
   Loader2,
   Plus,
   Trash2,
   Video,
   X,
 } from "lucide-react";
-import {
-  FormEvent,
-  useEffect,
-  useState,
-} from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import {
   getAdminCategories,
@@ -68,7 +66,6 @@ const mediaProviders: {
 }[] = [
   { value: "YOUTUBE", label: "YouTube" },
   { value: "CLOUDINARY", label: "Cloudinary" },
-  { value: "SUPABASE", label: "Supabase Storage" },
   { value: "EXTERNAL", label: "External URL" },
 ];
 
@@ -77,94 +74,48 @@ export default function EditResourcePage() {
   const params = useParams();
 
   const resourceId =
-    typeof params.id === "string"
-      ? params.id
-      : "";
+    typeof params.id === "string" ? params.id : "";
 
-  /* ------------------------------------------------------------------------ */
-  /* Loading                                                                  */
-  /* ------------------------------------------------------------------------ */
+  const [loading, setLoading] = useState(true);
+  const [loadingError, setLoadingError] = useState("");
 
-  const [loading, setLoading] =
+  const [categoriesLoading, setCategoriesLoading] =
     useState(true);
-
-  const [loadingError, setLoadingError] =
+  const [categoriesError, setCategoriesError] =
     useState("");
-
-  const [
-    categoriesLoading,
-    setCategoriesLoading,
-  ] = useState(true);
-
-  const [
-    categoriesError,
-    setCategoriesError,
-  ] = useState("");
-
-  /* ------------------------------------------------------------------------ */
-  /* Resource                                                                 */
-  /* ------------------------------------------------------------------------ */
 
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-  const [description, setDescription] =
-    useState("");
+  const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
 
   const [type, setType] =
     useState<ResourceType>("SERMON");
 
-  const [speaker, setSpeaker] =
-    useState("");
-
-  const [featured, setFeatured] =
-    useState(false);
-
-  const [published, setPublished] =
-    useState(false);
-
-  /* ------------------------------------------------------------------------ */
-  /* Categories                                                               */
-  /* ------------------------------------------------------------------------ */
+  const [speaker, setSpeaker] = useState("");
+  const [featured, setFeatured] = useState(false);
+  const [published, setPublished] = useState(false);
 
   const [categories, setCategories] =
     useState<AdminCategory[]>([]);
 
-  const [
-    selectedCategoryIds,
-    setSelectedCategoryIds,
-  ] = useState<string[]>([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] =
+    useState<string[]>([]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Media                                                                    */
-  /* ------------------------------------------------------------------------ */
+  const [media, setMedia] = useState<MediaItem[]>([]);
 
-  const [media, setMedia] =
-    useState<MediaItem[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  /* ------------------------------------------------------------------------ */
-  /* Submission                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  const [showSuccess, setShowSuccess] =
-    useState(false);
-
-  /* ------------------------------------------------------------------------ */
-  /* Load resource                                                            */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Load resource                                                          */
+  /* ---------------------------------------------------------------------- */
 
   async function loadResource() {
     if (!resourceId) {
       setLoading(false);
-      setLoadingError(
-        "Resource ID is missing.",
-      );
+      setLoadingError("Resource ID is missing.");
       return;
     }
 
@@ -172,13 +123,9 @@ export default function EditResourcePage() {
       setLoading(true);
       setLoadingError("");
 
-      const response =
-        await getAdminResource(resourceId);
+      const response = await getAdminResource(resourceId);
 
-      const resource =
-        response.data;
-
-      populateResource(resource);
+      populateResource(response.data);
     } catch (error) {
       setLoadingError(
         error instanceof Error
@@ -190,21 +137,18 @@ export default function EditResourcePage() {
     }
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Load categories                                                          */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Load categories                                                        */
+  /* ---------------------------------------------------------------------- */
 
   async function loadCategories() {
     try {
       setCategoriesLoading(true);
       setCategoriesError("");
 
-      const response =
-        await getAdminCategories();
+      const response = await getAdminCategories();
 
-      setCategories(
-        response.data ?? [],
-      );
+      setCategories(response.data ?? []);
     } catch (error) {
       setCategoriesError(
         error instanceof Error
@@ -216,156 +160,97 @@ export default function EditResourcePage() {
     }
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Initial load                                                             */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Initial load                                                           */
+  /* ---------------------------------------------------------------------- */
 
   useEffect(() => {
     loadResource();
     loadCategories();
   }, [resourceId]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Populate resource                                                        */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Populate resource                                                     */
+  /* ---------------------------------------------------------------------- */
 
-  function populateResource(
-    resource: AdminResource,
-  ) {
-    setTitle(
-      resource.title ?? "",
-    );
+  function populateResource(resource: AdminResource) {
+    setTitle(resource.title ?? "");
+    setSlug(resource.slug ?? "");
+    setDescription(resource.description ?? "");
+    setContent(resource.content ?? "");
 
-    setSlug(
-      resource.slug ?? "",
-    );
+    setType(resource.type ?? "SERMON");
+    setSpeaker(resource.speaker ?? "");
 
-    setDescription(
-      resource.description ?? "",
-    );
+    setFeatured(Boolean(resource.featured));
+    setPublished(Boolean(resource.published));
 
-    setContent(
-      resource.content ?? "",
-    );
-
-    setType(
-      resource.type ?? "SERMON",
-    );
-
-    setSpeaker(
-      resource.speaker ?? "",
-    );
-
-    setFeatured(
-      Boolean(resource.featured),
-    );
-
-    setPublished(
-      Boolean(resource.published),
-    );
-
-    const categoryIds = (
-      resource.categories ?? []
-    )
+    const categoryIds = (resource.categories ?? [])
       .map(
         (item) =>
           item.categoryId ??
           item.category?.id,
       )
       .filter(
-        (
-          id,
-        ): id is string =>
-          Boolean(id),
+        (id): id is string => Boolean(id),
       );
 
-    setSelectedCategoryIds(
-      categoryIds,
-    );
+    setSelectedCategoryIds(categoryIds);
 
     setMedia(
-      (resource.media ?? []).map(
-        (item) => ({
-          id: item.id,
-          type: item.type,
-          provider: item.provider,
-          title: item.title ?? "",
-          url: item.url ?? "",
-          externalId:
-            item.externalId ?? "",
-        }),
-      ),
+      (resource.media ?? []).map((item) => ({
+        id: item.id,
+        type: item.type,
+        provider: item.provider,
+        title: item.title ?? "",
+        url: item.url ?? "",
+        externalId: item.externalId ?? "",
+      })),
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Slug                                                                     */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Slug                                                                   */
+  /* ---------------------------------------------------------------------- */
 
-  function generateSlug(
-    value: string,
-  ) {
+  function generateSlug(value: string) {
     return value
       .toLowerCase()
       .trim()
-      .replace(
-        /[^a-z0-9\s-]/g,
-        "",
-      )
-      .replace(
-        /\s+/g,
-        "-",
-      )
-      .replace(
-        /-+/g,
-        "-",
-      );
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
   }
 
-  function handleTitleChange(
-    value: string,
-  ) {
+  function handleTitleChange(value: string) {
     setTitle(value);
 
     if (!slug.trim()) {
-      setSlug(
-        generateSlug(value),
-      );
+      setSlug(generateSlug(value));
     }
   }
 
-  function handleSlugChange(
-    value: string,
-  ) {
-    setSlug(
-      generateSlug(value),
+  function handleSlugChange(value: string) {
+    setSlug(generateSlug(value));
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Categories                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  function toggleCategory(categoryId: string) {
+    setSelectedCategoryIds((current) =>
+      current.includes(categoryId)
+        ? current.filter(
+            (id) => id !== categoryId,
+          )
+        : [...current, categoryId],
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Categories                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  function toggleCategory(
-    categoryId: string,
-  ) {
-    setSelectedCategoryIds(
-      (current) =>
-        current.includes(categoryId)
-          ? current.filter(
-              (id) =>
-                id !== categoryId,
-            )
-          : [
-              ...current,
-              categoryId,
-            ],
-    );
-  }
-
-  /* ------------------------------------------------------------------------ */
-  /* Media                                                                    */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Media                                                                  */
+  /* ---------------------------------------------------------------------- */
 
   function addMedia() {
     setMedia((current) => [
@@ -386,21 +271,18 @@ export default function EditResourcePage() {
     value: string,
   ) {
     setMedia((current) =>
-      current.map(
-        (item, itemIndex) =>
-          itemIndex === index
-            ? {
-                ...item,
-                [field]: value,
-              }
-            : item,
+      current.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              [field]: value,
+            }
+          : item,
       ),
     );
   }
 
-  function removeMedia(
-    index: number,
-  ) {
+  function removeMedia(index: number) {
     setMedia((current) =>
       current.filter(
         (_, itemIndex) =>
@@ -409,9 +291,29 @@ export default function EditResourcePage() {
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Media validation                                                         */
-  /* ------------------------------------------------------------------------ */
+  function handleProviderChange(
+    index: number,
+    provider: MediaProvider,
+  ) {
+    setMedia((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              provider,
+              externalId:
+                provider === "YOUTUBE"
+                  ? item.externalId
+                  : "",
+            }
+          : item,
+      ),
+    );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Media validation                                                       */
+  /* ---------------------------------------------------------------------- */
 
   function validateMedia() {
     for (
@@ -421,35 +323,45 @@ export default function EditResourcePage() {
     ) {
       const item = media[index];
 
-      if (
-        !item.url.trim() &&
-        !item.externalId.trim()
-      ) {
+      const hasUrl = Boolean(
+        item.url.trim(),
+      );
+
+      const hasExternalId = Boolean(
+        item.externalId.trim(),
+      );
+
+      // Completely empty media rows are ignored.
+      if (!hasUrl && !hasExternalId) {
         continue;
       }
 
       if (
         item.provider === "YOUTUBE" &&
-        !item.url.trim() &&
-        !item.externalId.trim()
+        !hasUrl &&
+        !hasExternalId
       ) {
-        return `Media ${index + 1}: Please provide a YouTube URL or video ID.`;
+        return `Media ${
+          index + 1
+        }: Please provide a YouTube URL or video ID.`;
       }
 
       if (
         item.provider !== "YOUTUBE" &&
-        !item.url.trim()
+        !hasUrl
       ) {
-        return `Media ${index + 1}: Please provide a media URL.`;
+        return `Media ${
+          index + 1
+        }: Please provide a media URL.`;
       }
     }
 
     return "";
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Submit                                                                   */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Submit                                                                 */
+  /* ---------------------------------------------------------------------- */
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
@@ -458,11 +370,8 @@ export default function EditResourcePage() {
 
     setError("");
 
-    const trimmedTitle =
-      title.trim();
-
-    const trimmedSlug =
-      slug.trim();
+    const trimmedTitle = title.trim();
+    const trimmedSlug = slug.trim();
 
     if (!trimmedTitle) {
       setError(
@@ -485,8 +394,7 @@ export default function EditResourcePage() {
       return;
     }
 
-    const mediaError =
-      validateMedia();
+    const mediaError = validateMedia();
 
     if (mediaError) {
       setError(mediaError);
@@ -496,33 +404,28 @@ export default function EditResourcePage() {
     try {
       setSaving(true);
 
-      const cleanedMedia =
-        media
-          .filter(
-            (item) =>
-              item.url.trim() ||
-              item.externalId.trim(),
-          )
-          .map((item) => ({
-            type: item.type,
-            provider: item.provider,
-
-            title:
-              item.title.trim() ||
-              undefined,
-
-            url:
-              item.url.trim() ||
-              undefined,
-
-            externalId:
-              item.externalId.trim() ||
-              undefined,
-          }));
+      const cleanedMedia = media
+        .filter(
+          (item) =>
+            item.url.trim() ||
+            item.externalId.trim(),
+        )
+        .map((item) => ({
+          type: item.type,
+          provider: item.provider,
+          title:
+            item.title.trim() ||
+            undefined,
+          url:
+            item.url.trim() ||
+            undefined,
+          externalId:
+            item.externalId.trim() ||
+            undefined,
+        }));
 
       const input: UpdateResourceInput = {
         title: trimmedTitle,
-
         slug: trimmedSlug,
 
         description:
@@ -540,7 +443,6 @@ export default function EditResourcePage() {
           undefined,
 
         featured,
-
         published,
 
         categoryIds:
@@ -566,9 +468,9 @@ export default function EditResourcePage() {
     }
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Success                                                                  */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Success                                                                */
+  /* ---------------------------------------------------------------------- */
 
   function handleSuccessClose() {
     setShowSuccess(false);
@@ -578,9 +480,9 @@ export default function EditResourcePage() {
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Loading                                                                  */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Loading                                                                */
+  /* ---------------------------------------------------------------------- */
 
   if (loading) {
     return (
@@ -590,16 +492,15 @@ export default function EditResourcePage() {
             size={18}
             className="animate-spin text-bronze"
           />
-
           Loading resource...
         </div>
       </main>
     );
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Loading error                                                            */
-  /* ------------------------------------------------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  /* Loading error                                                          */
+  /* ---------------------------------------------------------------------- */
 
   if (loadingError) {
     return (
@@ -623,9 +524,7 @@ export default function EditResourcePage() {
               onClick={loadResource}
               className="inline-flex items-center gap-2 bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
             >
-              <Loader2
-                size={14}
-              />
+              <Loader2 size={14} />
               Try Again
             </button>
 
@@ -633,9 +532,7 @@ export default function EditResourcePage() {
               href="/admin/dashboard/resources"
               className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/60 transition-colors hover:border-charcoal/20 hover:text-charcoal"
             >
-              <ArrowLeft
-                size={14}
-              />
+              <ArrowLeft size={14} />
               Back to Resources
             </Link>
           </div>
@@ -646,9 +543,7 @@ export default function EditResourcePage() {
 
   return (
     <main className="min-h-screen bg-ivory text-charcoal">
-      {/* ------------------------------------------------------------------ */}
-      {/* Header                                                             */}
-      {/* ------------------------------------------------------------------ */}
+      {/* Header */}
 
       <header className="border-b border-charcoal/10 bg-white">
         <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-6 lg:px-10">
@@ -683,9 +578,7 @@ export default function EditResourcePage() {
           onSubmit={handleSubmit}
           className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
-          {/* ---------------------------------------------------------------- */}
-          {/* Main content                                                     */}
-          {/* ---------------------------------------------------------------- */}
+          {/* Main content */}
 
           <div className="space-y-8">
             {/* Basic Information */}
@@ -746,8 +639,7 @@ export default function EditResourcePage() {
                       value={type}
                       onChange={(event) =>
                         setType(
-                          event.target
-                            .value as ResourceType,
+                          event.target.value as ResourceType,
                         )
                       }
                       className="input"
@@ -837,7 +729,6 @@ export default function EditResourcePage() {
                       size={16}
                       className="animate-spin"
                     />
-
                     Loading categories...
                   </div>
                 ) : categoriesError ? (
@@ -848,14 +739,15 @@ export default function EditResourcePage() {
 
                     <button
                       type="button"
-                      onClick={loadCategories}
+                      onClick={
+                        loadCategories
+                      }
                       className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze hover:underline"
                     >
                       Try again
                     </button>
                   </div>
-                ) : categories.length ===
-                  0 ? (
+                ) : categories.length === 0 ? (
                   <div className="border border-dashed border-charcoal/10 px-5 py-8 text-center">
                     <p className="text-sm text-charcoal/45">
                       No categories have been
@@ -879,7 +771,9 @@ export default function EditResourcePage() {
 
                         return (
                           <button
-                            key={category.id}
+                            key={
+                              category.id
+                            }
                             type="button"
                             onClick={() =>
                               toggleCategory(
@@ -904,9 +798,7 @@ export default function EditResourcePage() {
                               {selected && (
                                 <Check
                                   size={11}
-                                  strokeWidth={
-                                    2.5
-                                  }
+                                  strokeWidth={2.5}
                                 />
                               )}
                             </span>
@@ -970,8 +862,10 @@ export default function EditResourcePage() {
                   </h2>
 
                   <p className="mt-1 text-xs text-charcoal/40">
-                    Add YouTube links, audio
-                    URLs, PDFs, or other media.
+                    Add YouTube videos,
+                    Cloudinary-hosted audio,
+                    PDFs, images, or external
+                    media.
                   </p>
                 </div>
 
@@ -1025,6 +919,16 @@ export default function EditResourcePage() {
                                   <Headphones
                                     size={16}
                                   />
+                                ) : item.type ===
+                                  "PDF" ? (
+                                  <FileText
+                                    size={16}
+                                  />
+                                ) : item.type ===
+                                  "IMAGE" ? (
+                                  <ImageIcon
+                                    size={16}
+                                  />
                                 ) : (
                                   <Video
                                     size={16}
@@ -1039,7 +943,9 @@ export default function EditResourcePage() {
                                 </p>
 
                                 <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-charcoal/35">
-                                  {item.type}
+                                  {item.type}{" "}
+                                  ·{" "}
+                                  {item.provider}
                                 </p>
                               </div>
                             </div>
@@ -1052,7 +958,9 @@ export default function EditResourcePage() {
                                 )
                               }
                               className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
-                              aria-label={`Remove media ${index + 1}`}
+                              aria-label={`Remove media ${
+                                index + 1
+                              }`}
                             >
                               <Trash2
                                 size={15}
@@ -1072,8 +980,7 @@ export default function EditResourcePage() {
                                   updateMedia(
                                     index,
                                     "type",
-                                    event
-                                      .target
+                                    event.target
                                       .value,
                                   )
                                 }
@@ -1108,12 +1015,10 @@ export default function EditResourcePage() {
                                 onChange={(
                                   event,
                                 ) =>
-                                  updateMedia(
+                                  handleProviderChange(
                                     index,
-                                    "provider",
-                                    event
-                                      .target
-                                      .value,
+                                    event.target
+                                      .value as MediaProvider,
                                   )
                                 }
                                 className="input"
@@ -1152,8 +1057,7 @@ export default function EditResourcePage() {
                                   updateMedia(
                                     index,
                                     "title",
-                                    event
-                                      .target
+                                    event.target
                                       .value,
                                   )
                                 }
@@ -1165,11 +1069,19 @@ export default function EditResourcePage() {
 
                           <div className="mt-5">
                             <Field
-                              label="URL"
+                              label={
+                                item.provider ===
+                                "CLOUDINARY"
+                                  ? "Cloudinary Delivery URL"
+                                  : "URL"
+                              }
                               hint={
                                 item.provider ===
                                 "YOUTUBE"
                                   ? "Paste the full YouTube URL."
+                                  : item.provider ===
+                                    "CLOUDINARY"
+                                  ? "Paste the Cloudinary delivery URL for this media."
                                   : "Paste the direct URL for this media."
                               }
                             >
@@ -1184,8 +1096,7 @@ export default function EditResourcePage() {
                                   updateMedia(
                                     index,
                                     "url",
-                                    event
-                                      .target
+                                    event.target
                                       .value,
                                   )
                                 }
@@ -1193,6 +1104,9 @@ export default function EditResourcePage() {
                                   item.provider ===
                                   "YOUTUBE"
                                     ? "https://youtu.be/..."
+                                    : item.provider ===
+                                      "CLOUDINARY"
+                                    ? "https://res.cloudinary.com/..."
                                     : "https://..."
                                 }
                                 className="input"
@@ -1217,8 +1131,7 @@ export default function EditResourcePage() {
                                     updateMedia(
                                       index,
                                       "externalId",
-                                      event
-                                        .target
+                                      event.target
                                         .value,
                                     )
                                   }
@@ -1226,6 +1139,23 @@ export default function EditResourcePage() {
                                   className="input"
                                 />
                               </Field>
+                            </div>
+                          )}
+
+                          {item.provider ===
+                            "CLOUDINARY" && (
+                            <div className="mt-4 border border-bronze/10 bg-bronze/[0.03] p-4">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
+                                Cloudinary Media
+                              </p>
+
+                              <p className="mt-2 text-[11px] leading-5 text-charcoal/40">
+                                This media is hosted
+                                in Cloudinary. Use
+                                the Cloudinary delivery
+                                URL returned after
+                                upload.
+                              </p>
                             </div>
                           )}
                         </div>
@@ -1237,9 +1167,7 @@ export default function EditResourcePage() {
             </section>
           </div>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* Sidebar                                                           */}
-          {/* ---------------------------------------------------------------- */}
+          {/* Sidebar */}
 
           <aside className="space-y-6">
             <section className="border border-charcoal/10 bg-white">
@@ -1290,7 +1218,9 @@ export default function EditResourcePage() {
                     )
                     .map((category) => (
                       <span
-                        key={category.id}
+                        key={
+                          category.id
+                        }
                         className="inline-flex items-center gap-1.5 bg-bronze/10 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze"
                       >
                         {category.name}
@@ -1320,13 +1250,11 @@ export default function EditResourcePage() {
                       size={15}
                       className="animate-spin"
                     />
-
                     Saving Changes...
                   </>
                 ) : (
                   <>
                     <Check size={15} />
-
                     Save Changes
 
                     <ArrowUpRight
@@ -1349,9 +1277,7 @@ export default function EditResourcePage() {
         </form>
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Success Dialog                                                      */}
-      {/* ------------------------------------------------------------------ */}
+      {/* Success Dialog */}
 
       {showSuccess && (
         <SuccessDialog
@@ -1422,8 +1348,11 @@ function Toggle({
   return (
     <button
       type="button"
-      onClick={() => onChange(!checked)}
+      onClick={() =>
+        onChange(!checked)
+      }
       className="flex w-full items-start gap-4 text-left"
+      aria-pressed={checked}
     >
       <span
         className={[
@@ -1490,8 +1419,6 @@ function SuccessDialog({
             ministry library.
           </p>
         </div>
-
-
 
         <button
           type="button"

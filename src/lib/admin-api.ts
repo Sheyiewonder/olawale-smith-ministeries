@@ -558,6 +558,81 @@ export async function adminRequest<T>(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Media Upload                                                               */
+/* -------------------------------------------------------------------------- */
+
+export interface UploadMediaResponse {
+  success: boolean;
+
+  data: {
+    publicId: string;
+    url: string;
+    secureUrl: string;
+    resourceType: string;
+    format?: string;
+    bytes: number;
+    duration?: number;
+    originalFilename: string;
+    type: "AUDIO" | "PDF" | "IMAGE";
+  };
+}
+
+export async function uploadAdminMedia(
+  file: File,
+  type: "AUDIO" | "PDF" | "IMAGE",
+): Promise<UploadMediaResponse> {
+  const token = getAdminToken();
+
+  const formData = new FormData();
+
+  formData.append("file", file);
+  formData.append("type", type);
+
+  const response = await fetch(
+    `${API_URL}/admin/media/upload`,
+    {
+      method: "POST",
+      body: formData,
+      cache: "no-store",
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : undefined,
+    },
+  );
+
+  if (response.status === 401) {
+    throw new Error(
+      "Your session has expired. Please log in again.",
+    );
+  }
+
+  if (!response.ok) {
+    let message =
+      `Media upload failed (${response.status})`;
+
+    try {
+      const body = await response.json();
+
+      if (typeof body?.message === "string") {
+        message = body.message;
+      } else if (typeof body?.error === "string") {
+        message = body.error;
+      } else if (Array.isArray(body?.message)) {
+        message = body.message.join(", ");
+      }
+    } catch {
+      // Ignore invalid error responses.
+    }
+
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/* -------------------------------------------------------------------------- */
 /* Authentication                                                             */
 /* -------------------------------------------------------------------------- */
 
