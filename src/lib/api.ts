@@ -63,7 +63,7 @@ export interface MediaAsset {
   externalId?: string | null;
 
   mimeType?: string | null;
-  fileSize?: string | number | null;
+  fileSize?: number | number | null;
   duration?: number | null;
 }
 

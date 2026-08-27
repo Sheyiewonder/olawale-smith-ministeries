@@ -180,7 +180,7 @@ export interface AdminMedia {
    * to avoid integer overflow / BigInt serialization
    * issues in the frontend.
    */
-  fileSize?: string | null;
+  fileSize?: number | null;
 
   duration?: number | null;
 
@@ -207,7 +207,7 @@ export interface CreateMediaInput {
    * Keep this as string because MediaAsset.fileSize
    * is String in Prisma.
    */
-  fileSize?: string;
+  fileSize?: number;
 
   duration?: number;
 }
@@ -227,7 +227,7 @@ export interface UpdateMediaInput {
 
   mimeType?: string | null;
 
-  fileSize?: string | null;
+  fileSize?: number | null;
 
   duration?: number | null;
 }
