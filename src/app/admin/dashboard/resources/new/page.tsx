@@ -30,6 +30,7 @@ import {
 } from "@/lib/admin-api";
 
 interface MediaItem {
+  id?: string;
   type: MediaType;
   provider: MediaProvider;
   title: string;
