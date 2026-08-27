@@ -60,10 +60,29 @@ export type MediaType =
   | "IMAGE"
   | "VIDEO";
 
+/*
+ * Must stay synchronized with schema.prisma.
+ *
+ * CLOUDINARY:
+ * - Sermon/audio files
+ * - Ebook/PDF files
+ * - Other larger media
+ *
+ * SUPABASE:
+ * - Thumbnails
+ * - Article images
+ * - Other lightweight images
+ *
+ * YOUTUBE:
+ * - YouTube-hosted videos
+ *
+ * EXTERNAL:
+ * - Other externally hosted resources
+ */
 export type MediaProvider =
-  | "R2"
-  | "YOUTUBE"
+  | "CLOUDINARY"
   | "SUPABASE"
+  | "YOUTUBE"
   | "EXTERNAL";
 
 /* -------------------------------------------------------------------------- */
@@ -140,7 +159,7 @@ export interface UpdateTagInput {
 /* -------------------------------------------------------------------------- */
 
 export interface AdminMedia {
-  id?: string;
+  id: string;
 
   type: MediaType;
 
@@ -156,9 +175,17 @@ export interface AdminMedia {
 
   mimeType?: string | null;
 
-  fileSize?: string | number | null;
+  /*
+   * Stored as a string in PostgreSQL/API responses
+   * to avoid integer overflow / BigInt serialization
+   * issues in the frontend.
+   */
+  fileSize?: string | null;
 
   duration?: number | null;
+
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CreateMediaInput {
@@ -176,9 +203,33 @@ export interface CreateMediaInput {
 
   mimeType?: string;
 
-  fileSize?: number;
+  /*
+   * Keep this as string because MediaAsset.fileSize
+   * is String in Prisma.
+   */
+  fileSize?: string;
 
   duration?: number;
+}
+
+export interface UpdateMediaInput {
+  type?: MediaType;
+
+  provider?: MediaProvider;
+
+  title?: string | null;
+
+  url?: string | null;
+
+  storageKey?: string | null;
+
+  externalId?: string | null;
+
+  mimeType?: string | null;
+
+  fileSize?: string | null;
+
+  duration?: number | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -187,12 +238,36 @@ export interface CreateMediaInput {
 
 export interface AdminSeries {
   id: string;
+
   title: string;
+
   slug: string;
+
   description?: string | null;
 
   createdAt?: string;
+
   updatedAt?: string;
+
+  _count?: {
+    resources?: number;
+  };
+}
+
+export interface CreateSeriesInput {
+  title: string;
+
+  slug?: string;
+
+  description?: string;
+}
+
+export interface UpdateSeriesInput {
+  title?: string;
+
+  slug?: string;
+
+  description?: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -223,6 +298,8 @@ export interface AdminResource {
   publishedAt?: string | null;
 
   thumbnailId?: string | null;
+
+  thumbnail?: AdminMedia | null;
 
   media?: AdminMedia[];
 
@@ -262,6 +339,11 @@ export interface CreateResourceInput {
 
   publishedAt?: string | null;
 
+  /*
+   * MediaAsset used as the resource thumbnail.
+   */
+  thumbnailId?: string | null;
+
   categoryIds?: string[];
 
   tagIds?: string[];
@@ -272,8 +354,8 @@ export interface CreateResourceInput {
 }
 
 /*
- * PATCH requests should be allowed to send only
- * the fields that actually changed.
+ * PATCH requests can send only the fields
+ * that actually changed.
  */
 export type UpdateResourceInput =
   Partial<CreateResourceInput>;
@@ -306,6 +388,15 @@ export interface TagResponse {
 
 export interface TagsResponse {
   data: AdminTag[];
+  meta?: ApiMeta;
+}
+
+export interface SeriesResponse {
+  data: AdminSeries;
+}
+
+export interface SeriesResponseList {
+  data: AdminSeries[];
   meta?: ApiMeta;
 }
 
@@ -363,10 +454,6 @@ export async function adminRequest<T>(
     options.headers,
   );
 
-  /*
-   * Only set JSON content type when
-   * a request actually has a body.
-   */
   if (options.body !== undefined) {
     headers.set(
       "Content-Type",
@@ -407,13 +494,6 @@ export async function adminRequest<T>(
     );
   }
 
-  /*
-   * Handle authentication failures centrally.
-   *
-   * We do not automatically redirect here because
-   * this API helper can be used by pages that need
-   * to decide how they want to handle authentication.
-   */
   if (response.status === 401) {
     throw new Error(
       "Your session has expired. Please log in again.",
@@ -446,7 +526,8 @@ export async function adminRequest<T>(
       }
     } catch {
       /*
-       * Ignore invalid/non-JSON error bodies.
+       * Ignore invalid/non-JSON
+       * error responses.
        */
     }
 
@@ -460,10 +541,6 @@ export async function adminRequest<T>(
     return undefined as T;
   }
 
-  /*
-   * Some successful requests may return
-   * an empty body.
-   */
   const contentType =
     response.headers.get(
       "content-type",
@@ -664,6 +741,60 @@ export async function deleteTag(
 ): Promise<DeleteResponse> {
   return adminRequest<DeleteResponse>(
     `/admin/tags/${id}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Series                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export async function getAdminSeries(): Promise<SeriesResponseList> {
+  return adminRequest<SeriesResponseList>(
+    "/admin/series",
+  );
+}
+
+export async function getAdminSerie(
+  id: string,
+): Promise<SeriesResponse> {
+  return adminRequest<SeriesResponse>(
+    `/admin/series/${id}`,
+  );
+}
+
+export async function createSeries(
+  input: CreateSeriesInput,
+): Promise<SeriesResponse> {
+  return adminRequest<SeriesResponse>(
+    "/admin/series",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function updateSeries(
+  id: string,
+  input: UpdateSeriesInput,
+): Promise<SeriesResponse> {
+  return adminRequest<SeriesResponse>(
+    `/admin/series/${id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deleteSeries(
+  id: string,
+): Promise<DeleteResponse> {
+  return adminRequest<DeleteResponse>(
+    `/admin/series/${id}`,
     {
       method: "DELETE",
     },

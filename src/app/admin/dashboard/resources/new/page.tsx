@@ -22,15 +22,20 @@ import {
 import {
   createResource,
   getAdminCategories,
+  getAdminSeries,
   type AdminCategory,
+  type AdminSeries,
   type CreateResourceInput,
   type ResourceType,
   type MediaType,
   type MediaProvider,
 } from "@/lib/admin-api";
 
+/* -------------------------------------------------------------------------- */
+/* Media Item                                                                 */
+/* -------------------------------------------------------------------------- */
+
 interface MediaItem {
-  id?: string;
   type: MediaType;
   provider: MediaProvider;
   title: string;
@@ -38,57 +43,116 @@ interface MediaItem {
   externalId: string;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Resource Types                                                             */
+/* -------------------------------------------------------------------------- */
+
 const resourceTypes: {
   value: ResourceType;
   label: string;
 }[] = [
-  { value: "SERMON", label: "Sermon" },
-  { value: "EBOOK", label: "Ebook" },
-  { value: "SONG", label: "Song" },
-  { value: "VIDEO", label: "Video" },
-  { value: "PODCAST", label: "Podcast" },
-  { value: "ARTICLE", label: "Article" },
+  {
+    value: "SERMON",
+    label: "Sermon",
+  },
+  {
+    value: "EBOOK",
+    label: "Ebook",
+  },
+  {
+    value: "SONG",
+    label: "Song",
+  },
+  {
+    value: "VIDEO",
+    label: "Video",
+  },
+  {
+    value: "PODCAST",
+    label: "Podcast",
+  },
+  {
+    value: "ARTICLE",
+    label: "Article",
+  },
 ];
+
+/* -------------------------------------------------------------------------- */
+/* Media Types                                                                */
+/* -------------------------------------------------------------------------- */
 
 const mediaTypes: {
   value: MediaType;
   label: string;
 }[] = [
-  { value: "VIDEO", label: "Video" },
-  { value: "AUDIO", label: "Audio" },
-  { value: "PDF", label: "PDF" },
-  { value: "IMAGE", label: "Image" },
+  {
+    value: "VIDEO",
+    label: "Video",
+  },
+  {
+    value: "AUDIO",
+    label: "Audio",
+  },
+  {
+    value: "PDF",
+    label: "PDF",
+  },
+  {
+    value: "IMAGE",
+    label: "Image",
+  },
 ];
+
+/* -------------------------------------------------------------------------- */
+/* Media Providers                                                            */
+/* -------------------------------------------------------------------------- */
 
 const mediaProviders: {
   value: MediaProvider;
   label: string;
 }[] = [
-  { value: "YOUTUBE", label: "YouTube" },
-  { value: "EXTERNAL", label: "External URL" },
-  { value: "R2", label: "Cloudflare R2" },
-  { value: "SUPABASE", label: "Supabase Storage" },
+  {
+    value: "YOUTUBE",
+    label: "YouTube",
+  },
+  {
+    value: "CLOUDINARY",
+    label: "Cloudinary",
+  },
+  {
+    value: "EXTERNAL",
+    label: "External URL",
+  },
 ];
+
+/* -------------------------------------------------------------------------- */
+/* Page                                                                       */
+/* -------------------------------------------------------------------------- */
 
 export default function NewResourcePage() {
   const router = useRouter();
 
   /* ------------------------------------------------------------------------ */
-  /* Basic resource state                                                     */
+  /* Basic Resource State                                                     */
   /* ------------------------------------------------------------------------ */
 
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] =
+    useState("");
   const [content, setContent] = useState("");
 
   const [type, setType] =
     useState<ResourceType>("SERMON");
 
-  const [speaker, setSpeaker] = useState("");
+  const [speaker, setSpeaker] =
+    useState("");
 
-  const [featured, setFeatured] = useState(false);
-  const [published, setPublished] = useState(false);
+  const [featured, setFeatured] =
+    useState(false);
+
+  const [published, setPublished] =
+    useState(false);
 
   /* ------------------------------------------------------------------------ */
   /* Categories                                                               */
@@ -107,23 +171,43 @@ export default function NewResourcePage() {
     useState("");
 
   /* ------------------------------------------------------------------------ */
+  /* Series                                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  const [series, setSeries] =
+    useState<AdminSeries[]>([]);
+
+  const [selectedSeriesId, setSelectedSeriesId] =
+    useState<string>("");
+
+  const [seriesLoading, setSeriesLoading] =
+    useState(true);
+
+  const [seriesError, setSeriesError] =
+    useState("");
+
+  /* ------------------------------------------------------------------------ */
   /* Media                                                                    */
   /* ------------------------------------------------------------------------ */
 
-  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [media, setMedia] =
+    useState<MediaItem[]>([]);
 
   /* ------------------------------------------------------------------------ */
   /* Submission                                                               */
   /* ------------------------------------------------------------------------ */
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [saving, setSaving] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   const [showSuccess, setShowSuccess] =
     useState(false);
 
   /* ------------------------------------------------------------------------ */
-  /* Load categories                                                          */
+  /* Load Categories                                                          */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -134,13 +218,16 @@ export default function NewResourcePage() {
         setCategoriesLoading(true);
         setCategoriesError("");
 
-        const response = await getAdminCategories();
+        const response =
+          await getAdminCategories();
 
         if (!mounted) {
           return;
         }
 
-        setCategories(response.data ?? []);
+        setCategories(
+          response.data ?? [],
+        );
       } catch (error) {
         if (!mounted) {
           return;
@@ -166,23 +253,84 @@ export default function NewResourcePage() {
   }, []);
 
   /* ------------------------------------------------------------------------ */
+  /* Load Series                                                              */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadSeries() {
+      try {
+        setSeriesLoading(true);
+        setSeriesError("");
+
+        const response =
+          await getAdminSeries();
+
+        if (!mounted) {
+          return;
+        }
+
+        setSeries(
+          response.data ?? [],
+        );
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+
+        setSeriesError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load series.",
+        );
+      } finally {
+        if (mounted) {
+          setSeriesLoading(false);
+        }
+      }
+    }
+
+    loadSeries();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  /* ------------------------------------------------------------------------ */
   /* Slug                                                                     */
   /* ------------------------------------------------------------------------ */
 
-  function generateSlug(value: string) {
+  function generateSlug(
+    value: string,
+  ) {
     return value
       .toLowerCase()
       .trim()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
+      .replace(
+        /[^a-z0-9\s-]/g,
+        "",
+      )
+      .replace(
+        /\s+/g,
+        "-",
+      )
+      .replace(
+        /-+/g,
+        "-",
+      );
   }
 
-  function handleTitleChange(value: string) {
+  function handleTitleChange(
+    value: string,
+  ) {
     setTitle(value);
 
     if (!slug) {
-      setSlug(generateSlug(value));
+      setSlug(
+        generateSlug(value),
+      );
     }
   }
 
@@ -190,33 +338,47 @@ export default function NewResourcePage() {
   /* Categories                                                               */
   /* ------------------------------------------------------------------------ */
 
-  function toggleCategory(categoryId: string) {
-    setSelectedCategoryIds((current) => {
-      if (current.includes(categoryId)) {
-        return current.filter(
-          (id) => id !== categoryId,
-        );
-      }
+  function toggleCategory(
+    categoryId: string,
+  ) {
+    setSelectedCategoryIds(
+      (current) => {
+        if (
+          current.includes(
+            categoryId,
+          )
+        ) {
+          return current.filter(
+            (id) =>
+              id !== categoryId,
+          );
+        }
 
-      return [...current, categoryId];
-    });
+        return [
+          ...current,
+          categoryId,
+        ];
+      },
+    );
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Media                                                                    */
+  /* Media                                                                     */
   /* ------------------------------------------------------------------------ */
 
   function addMedia() {
-    setMedia((current) => [
-      ...current,
-      {
-        type: "VIDEO",
-        provider: "YOUTUBE",
-        title: "",
-        url: "",
-        externalId: "",
-      },
-    ]);
+    setMedia(
+      (current) => [
+        ...current,
+        {
+          type: "VIDEO",
+          provider: "YOUTUBE",
+          title: "",
+          url: "",
+          externalId: "",
+        },
+      ],
+    );
   }
 
   function updateMedia(
@@ -224,24 +386,38 @@ export default function NewResourcePage() {
     field: keyof MediaItem,
     value: string,
   ) {
-    setMedia((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index
-          ? {
-              ...item,
-              [field]: value,
-            }
-          : item,
-      ),
+    setMedia(
+      (current) =>
+        current.map(
+          (
+            item,
+            itemIndex,
+          ) =>
+            itemIndex ===
+            index
+              ? {
+                  ...item,
+                  [field]:
+                    value,
+                }
+              : item,
+        ),
     );
   }
 
-  function removeMedia(index: number) {
-    setMedia((current) =>
-      current.filter(
-        (_, itemIndex) =>
-          itemIndex !== index,
-      ),
+  function removeMedia(
+    index: number,
+  ) {
+    setMedia(
+      (current) =>
+        current.filter(
+          (
+            _,
+            itemIndex,
+          ) =>
+            itemIndex !==
+            index,
+        ),
     );
   }
 
@@ -256,8 +432,11 @@ export default function NewResourcePage() {
 
     setError("");
 
-    const trimmedTitle = title.trim();
-    const trimmedSlug = slug.trim();
+    const trimmedTitle =
+      title.trim();
+
+    const trimmedSlug =
+      slug.trim();
 
     if (!trimmedTitle) {
       setError(
@@ -276,68 +455,77 @@ export default function NewResourcePage() {
     try {
       setSaving(true);
 
-      const input: CreateResourceInput = {
-        title: trimmedTitle,
-        slug: trimmedSlug,
+      const input: CreateResourceInput =
+        {
+          title:
+            trimmedTitle,
 
-        description:
-          description.trim() || undefined,
+          slug:
+            trimmedSlug,
 
-        content:
-          content.trim() || undefined,
+          description:
+            description.trim() ||
+            undefined,
 
-        type,
+          content:
+            content.trim() ||
+            undefined,
 
-        speaker:
-          speaker.trim() || undefined,
+          type,
 
-        featured,
-        published,
+          speaker:
+            speaker.trim() ||
+            undefined,
 
-        /*
-         * These are the actual category IDs that
-         * will be sent to the backend.
-         */
-        categoryIds:
-          selectedCategoryIds,
+          featured,
 
-        /*
-         * Tags are not implemented in this form yet.
-         */
-        tagIds: [],
+          published,
 
-        media: media
-          .filter(
-            (item) =>
-              item.url.trim() ||
-              item.externalId.trim(),
-          )
-          .map((item) => ({
-            ...(item.id
-              ? { id: item.id }
-              : {}),
+          categoryIds:
+            selectedCategoryIds,
 
-            type: item.type,
+          tagIds: [],
 
-            provider: item.provider,
+          seriesId:
+            selectedSeriesId ||
+            null,
 
-            title:
-              item.title.trim() ||
-              undefined,
+          media: media
+            .filter(
+              (item) =>
+                item.url.trim() ||
+                item.externalId.trim(),
+            )
+            .map(
+              (item) => ({
+                type:
+                  item.type,
 
-            url:
-              item.url.trim() ||
-              undefined,
+                provider:
+                  item.provider,
 
-            externalId:
-              item.externalId.trim() ||
-              undefined,
-        })),
-      };
+                title:
+                  item.title.trim() ||
+                  undefined,
 
-      await createResource(input);
+                url:
+                  item.url.trim() ||
+                  undefined,
 
-      setShowSuccess(true);
+                externalId:
+                  item.externalId.trim() ||
+                  undefined,
+              }),
+            ),
+        };
+
+      await createResource(
+        input,
+      );
+
+      setShowSuccess(
+        true,
+      );
     } catch (error) {
       setError(
         error instanceof Error
@@ -349,6 +537,10 @@ export default function NewResourcePage() {
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Success                                                                  */
+  /* ------------------------------------------------------------------------ */
+
   function handleSuccessClose() {
     setShowSuccess(false);
 
@@ -356,6 +548,10 @@ export default function NewResourcePage() {
       "/admin/dashboard/resources",
     );
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                   */
+  /* ------------------------------------------------------------------------ */
 
   return (
     <main className="min-h-screen bg-ivory text-charcoal">
@@ -380,9 +576,10 @@ export default function NewResourcePage() {
             </h1>
 
             <p className="mt-2 max-w-xl text-sm leading-6 text-charcoal/45">
-              Add a sermon, ebook, song, video,
-              podcast, or article to the ministry
-              library.
+              Add a sermon, ebook,
+              song, video, podcast,
+              or article to the
+              ministry library.
             </p>
           </div>
         </div>
@@ -390,10 +587,12 @@ export default function NewResourcePage() {
 
       <div className="mx-auto w-full max-w-[1400px] px-6 py-8 lg:px-10 lg:py-12">
         <form
-          onSubmit={handleSubmit}
+          onSubmit={
+            handleSubmit
+          }
           className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
-          {/* Main content */}
+          {/* Main Content */}
           <div className="space-y-8">
             {/* Basic Information */}
             <section className="border border-charcoal/10 bg-white">
@@ -416,7 +615,8 @@ export default function NewResourcePage() {
                     value={title}
                     onChange={(event) =>
                       handleTitleChange(
-                        event.target.value,
+                        event.target
+                          .value,
                       )
                     }
                     placeholder="Walking in Purpose"
@@ -434,7 +634,8 @@ export default function NewResourcePage() {
                     value={slug}
                     onChange={(event) =>
                       setSlug(
-                        event.target.value,
+                        event.target
+                          .value,
                       )
                     }
                     placeholder="walking-in-purpose"
@@ -461,10 +662,16 @@ export default function NewResourcePage() {
                       {resourceTypes.map(
                         (item) => (
                           <option
-                            key={item.value}
-                            value={item.value}
+                            key={
+                              item.value
+                            }
+                            value={
+                              item.value
+                            }
                           >
-                            {item.label}
+                            {
+                              item.label
+                            }
                           </option>
                         ),
                       )}
@@ -476,7 +683,8 @@ export default function NewResourcePage() {
                       value={speaker}
                       onChange={(event) =>
                         setSpeaker(
-                          event.target.value,
+                          event.target
+                            .value,
                         )
                       }
                       placeholder="Pastor Olawale Smith"
@@ -487,10 +695,13 @@ export default function NewResourcePage() {
 
                 <Field label="Description">
                   <textarea
-                    value={description}
+                    value={
+                      description
+                    }
                     onChange={(event) =>
                       setDescription(
-                        event.target.value,
+                        event.target
+                          .value,
                       )
                     }
                     placeholder="Brief description of this resource..."
@@ -507,7 +718,8 @@ export default function NewResourcePage() {
                     value={content}
                     onChange={(event) =>
                       setContent(
-                        event.target.value,
+                        event.target
+                          .value,
                       )
                     }
                     placeholder="Write the resource content here..."
@@ -518,7 +730,7 @@ export default function NewResourcePage() {
               </div>
             </section>
 
-            {/* Categories */}
+            {/* Organization */}
             <section className="border border-charcoal/10 bg-white">
               <div className="border-b border-charcoal/10 px-6 py-5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
@@ -526,117 +738,209 @@ export default function NewResourcePage() {
                 </p>
 
                 <h2 className="mt-2 text-xl font-medium">
-                  Categories
+                  Categories & Series
                 </h2>
 
                 <p className="mt-1 text-xs text-charcoal/40">
-                  Assign one or more categories to
-                  organize this resource.
+                  Organize this resource
+                  for easier discovery
+                  across the ministry
+                  library.
                 </p>
               </div>
 
-              <div className="p-6">
-                {categoriesLoading ? (
-                  <div className="flex items-center gap-3 py-6 text-sm text-charcoal/40">
-                    <Loader2
-                      size={16}
-                      className="animate-spin"
-                    />
-                    Loading categories...
-                  </div>
-                ) : categoriesError ? (
-                  <div className="border border-red-500/15 bg-red-500/[0.03] p-4">
-                    <p className="text-sm text-red-600">
-                      {categoriesError}
-                    </p>
-                  </div>
-                ) : categories.length === 0 ? (
-                  <div className="border border-dashed border-charcoal/10 px-5 py-8 text-center">
-                    <p className="text-sm text-charcoal/45">
-                      No categories have been
-                      created yet.
-                    </p>
+              <div className="space-y-8 p-6">
+                {/* Categories */}
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/50">
+                    Categories
+                  </p>
 
-                    <p className="mt-2 text-[11px] leading-5 text-charcoal/35">
-                      Create categories from the
-                      Categories section of the
-                      admin dashboard.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {categories.map(
-                      (category) => {
-                        const selected =
-                          selectedCategoryIds.includes(
-                            category.id,
-                          );
+                  <div className="mt-3">
+                    {categoriesLoading ? (
+                      <div className="flex items-center gap-3 py-6 text-sm text-charcoal/40">
+                        <Loader2
+                          size={16}
+                          className="animate-spin"
+                        />
+                        Loading categories...
+                      </div>
+                    ) : categoriesError ? (
+                      <div className="border border-red-500/15 bg-red-500/[0.03] p-4">
+                        <p className="text-sm text-red-600">
+                          {
+                            categoriesError
+                          }
+                        </p>
+                      </div>
+                    ) : categories.length ===
+                      0 ? (
+                      <div className="border border-dashed border-charcoal/10 px-5 py-8 text-center">
+                        <p className="text-sm text-charcoal/45">
+                          No categories have
+                          been created yet.
+                        </p>
 
-                        return (
-                          <button
-                            key={category.id}
-                            type="button"
-                            onClick={() =>
-                              toggleCategory(
+                        <p className="mt-2 text-[11px] leading-5 text-charcoal/35">
+                          Create categories
+                          from the Categories
+                          section of the admin
+                          dashboard.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {categories.map(
+                          (
+                            category,
+                          ) => {
+                            const selected =
+                              selectedCategoryIds.includes(
                                 category.id,
-                              )
-                            }
-                            className={[
-                              "flex items-start gap-3 border p-4 text-left transition-all",
-                              selected
-                                ? "border-bronze bg-bronze/[0.06]"
-                                : "border-charcoal/10 hover:border-bronze/40",
-                            ].join(" ")}
-                          >
-                            <span
-                              className={[
-                                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border transition-colors",
-                                selected
-                                  ? "border-bronze bg-bronze text-ivory"
-                                  : "border-charcoal/20 bg-white",
-                              ].join(" ")}
-                            >
-                              {selected && (
-                                <Check
-                                  size={11}
-                                  strokeWidth={2.5}
-                                />
-                              )}
-                            </span>
+                              );
 
-                            <span className="min-w-0">
-                              <span className="block text-xs font-medium">
-                                {category.name}
-                              </span>
-
-                              <span className="mt-1 block truncate text-[10px] text-charcoal/35">
-                                /{category.slug}
-                              </span>
-
-                              {category.description && (
-                                <span className="mt-2 block line-clamp-2 text-[11px] leading-5 text-charcoal/40">
-                                  {
-                                    category.description
-                                  }
+                            return (
+                              <button
+                                key={
+                                  category.id
+                                }
+                                type="button"
+                                onClick={() =>
+                                  toggleCategory(
+                                    category.id,
+                                  )
+                                }
+                                className={[
+                                  "flex items-start gap-3 border p-4 text-left transition-all",
+                                  selected
+                                    ? "border-bronze bg-bronze/[0.06]"
+                                    : "border-charcoal/10 hover:border-bronze/40",
+                                ].join(
+                                  " ",
+                                )}
+                              >
+                                <span
+                                  className={[
+                                    "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border transition-colors",
+                                    selected
+                                      ? "border-bronze bg-bronze text-ivory"
+                                      : "border-charcoal/20 bg-white",
+                                  ].join(
+                                    " ",
+                                  )}
+                                >
+                                  {selected && (
+                                    <Check
+                                      size={
+                                        11
+                                      }
+                                      strokeWidth={
+                                        2.5
+                                      }
+                                    />
+                                  )}
                                 </span>
-                              )}
-                            </span>
-                          </button>
-                        );
-                      },
+
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-medium">
+                                    {
+                                      category.name
+                                    }
+                                  </span>
+
+                                  <span className="mt-1 block truncate text-[10px] text-charcoal/35">
+                                    /
+                                    {
+                                      category.slug
+                                    }
+                                  </span>
+
+                                  {category.description && (
+                                    <span className="mt-2 block line-clamp-2 text-[11px] leading-5 text-charcoal/40">
+                                      {
+                                        category.description
+                                      }
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          },
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
 
-                {selectedCategoryIds.length > 0 && (
-                  <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze">
-                    {selectedCategoryIds.length}{" "}
-                    {selectedCategoryIds.length === 1
-                      ? "category"
-                      : "categories"}{" "}
-                    selected
-                  </p>
-                )}
+                  {selectedCategoryIds.length >
+                    0 && (
+                    <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze">
+                      {
+                        selectedCategoryIds.length
+                      }{" "}
+                      {selectedCategoryIds.length ===
+                      1
+                        ? "category"
+                        : "categories"}{" "}
+                      selected
+                    </p>
+                  )}
+                </div>
+
+                {/* Series */}
+                <Field
+                  label="Series"
+                  hint="Optional. Use a series to group related sermons, teachings, or resources."
+                >
+                  {seriesLoading ? (
+                    <div className="flex h-12 items-center gap-3 border border-charcoal/10 px-4 text-sm text-charcoal/40">
+                      <Loader2
+                        size={15}
+                        className="animate-spin"
+                      />
+                      Loading series...
+                    </div>
+                  ) : seriesError ? (
+                    <div className="border border-red-500/15 bg-red-500/[0.03] p-4">
+                      <p className="text-sm text-red-600">
+                        {seriesError}
+                      </p>
+                    </div>
+                  ) : (
+                    <select
+                      value={
+                        selectedSeriesId
+                      }
+                      onChange={(event) =>
+                        setSelectedSeriesId(
+                          event.target
+                            .value,
+                        )
+                      }
+                      className="input"
+                    >
+                      <option value="">
+                        No series
+                      </option>
+
+                      {series.map(
+                        (item) => (
+                          <option
+                            key={
+                              item.id
+                            }
+                            value={
+                              item.id
+                            }
+                          >
+                            {
+                              item.title
+                            }
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  )}
+                </Field>
               </div>
             </section>
 
@@ -653,14 +957,18 @@ export default function NewResourcePage() {
                   </h2>
 
                   <p className="mt-1 text-xs text-charcoal/40">
-                    Add YouTube links, audio URLs,
-                    PDFs, or other media.
+                    Add YouTube links,
+                    Cloudinary media,
+                    PDFs, or external
+                    media.
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={addMedia}
+                  onClick={
+                    addMedia
+                  }
                   className="inline-flex items-center gap-2 border border-charcoal/10 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors hover:border-bronze hover:text-bronze"
                 >
                   <Plus size={14} />
@@ -669,32 +977,44 @@ export default function NewResourcePage() {
               </div>
 
               <div className="p-6">
-                {media.length === 0 ? (
+                {media.length ===
+                0 ? (
                   <div className="border border-dashed border-charcoal/10 px-6 py-12 text-center">
                     <Video
                       size={24}
-                      strokeWidth={1.2}
+                      strokeWidth={
+                        1.2
+                      }
                       className="mx-auto text-charcoal/20"
                     />
 
                     <p className="mt-4 text-sm text-charcoal/45">
-                      No media attached yet.
+                      No media attached
+                      yet.
                     </p>
 
                     <button
                       type="button"
-                      onClick={addMedia}
+                      onClick={
+                        addMedia
+                      }
                       className="mt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze hover:underline"
                     >
-                      Add your first media
+                      Add your first
+                      media
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-5">
                     {media.map(
-                      (item, index) => (
+                      (
+                        item,
+                        index,
+                      ) => (
                         <div
-                          key={index}
+                          key={
+                            index
+                          }
                           className="border border-charcoal/10 p-5"
                         >
                           <div className="mb-5 flex items-center justify-between">
@@ -703,11 +1023,15 @@ export default function NewResourcePage() {
                                 {item.type ===
                                 "AUDIO" ? (
                                   <Headphones
-                                    size={16}
+                                    size={
+                                      16
+                                    }
                                   />
                                 ) : (
                                   <Video
-                                    size={16}
+                                    size={
+                                      16
+                                    }
                                   />
                                 )}
                               </div>
@@ -715,11 +1039,16 @@ export default function NewResourcePage() {
                               <div>
                                 <p className="text-xs font-medium">
                                   Media{" "}
-                                  {index + 1}
+                                  {
+                                    index +
+                                    1
+                                  }
                                 </p>
 
                                 <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-charcoal/35">
-                                  {item.type}
+                                  {
+                                    item.type
+                                  }
                                 </p>
                               </div>
                             </div>
@@ -734,25 +1063,37 @@ export default function NewResourcePage() {
                               className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
                               aria-label="Remove media"
                             >
-                              <Trash2 size={15} />
+                              <Trash2
+                                size={
+                                  15
+                                }
+                              />
                             </button>
                           </div>
 
                           <div className="grid gap-5 sm:grid-cols-2">
                             <Field label="Media Type">
                               <select
-                                value={item.type}
-                                onChange={(event) =>
+                                value={
+                                  item.type
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
                                   updateMedia(
                                     index,
                                     "type",
-                                    event.target.value,
+                                    event
+                                      .target
+                                      .value,
                                   )
                                 }
                                 className="input"
                               >
                                 {mediaTypes.map(
-                                  (mediaType) => (
+                                  (
+                                    mediaType,
+                                  ) => (
                                     <option
                                       key={
                                         mediaType.value
@@ -772,18 +1113,26 @@ export default function NewResourcePage() {
 
                             <Field label="Provider">
                               <select
-                                value={item.provider}
-                                onChange={(event) =>
+                                value={
+                                  item.provider
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
                                   updateMedia(
                                     index,
                                     "provider",
-                                    event.target.value,
+                                    event
+                                      .target
+                                      .value,
                                   )
                                 }
                                 className="input"
                               >
                                 {mediaProviders.map(
-                                  (provider) => (
+                                  (
+                                    provider,
+                                  ) => (
                                     <option
                                       key={
                                         provider.value
@@ -805,12 +1154,18 @@ export default function NewResourcePage() {
                           <div className="mt-5">
                             <Field label="Media Title">
                               <input
-                                value={item.title}
-                                onChange={(event) =>
+                                value={
+                                  item.title
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
                                   updateMedia(
                                     index,
                                     "title",
-                                    event.target.value,
+                                    event
+                                      .target
+                                      .value,
                                   )
                                 }
                                 placeholder="Walking in Purpose — Full Sermon"
@@ -822,45 +1177,97 @@ export default function NewResourcePage() {
                           <div className="mt-5">
                             <Field
                               label="URL"
-                              hint="For YouTube, paste the full YouTube URL."
+                              hint={
+                                item.provider ===
+                                "YOUTUBE"
+                                  ? "Paste the full YouTube video URL."
+                                  : "Paste the public URL for this media."
+                              }
                             >
                               <input
                                 type="url"
-                                value={item.url}
-                                onChange={(event) =>
+                                value={
+                                  item.url
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
                                   updateMedia(
                                     index,
                                     "url",
-                                    event.target.value,
+                                    event
+                                      .target
+                                      .value,
                                   )
                                 }
-                                placeholder="https://youtu.be/..."
+                                placeholder={
+                                  item.provider ===
+                                  "YOUTUBE"
+                                    ? "https://youtu.be/..."
+                                    : "https://..."
+                                }
                                 className="input"
                               />
                             </Field>
                           </div>
 
-                          <div className="mt-5">
-                            <Field
-                              label="External ID"
-                              hint="For YouTube, this is normally the video ID."
-                            >
-                              <input
-                                value={
-                                  item.externalId
-                                }
-                                onChange={(event) =>
-                                  updateMedia(
-                                    index,
-                                    "externalId",
-                                    event.target.value,
-                                  )
-                                }
-                                placeholder="XyCHesmYev0"
-                                className="input"
-                              />
-                            </Field>
-                          </div>
+                          {item.provider ===
+                            "YOUTUBE" && (
+                            <div className="mt-5">
+                              <Field
+                                label="YouTube Video ID"
+                                hint="Optional. This is the ID contained in the YouTube URL."
+                              >
+                                <input
+                                  value={
+                                    item.externalId
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    updateMedia(
+                                      index,
+                                      "externalId",
+                                      event
+                                        .target
+                                        .value,
+                                    )
+                                  }
+                                  placeholder="XyCHesmYev0"
+                                  className="input"
+                                />
+                              </Field>
+                            </div>
+                          )}
+
+                          {item.provider ===
+                            "CLOUDINARY" && (
+                            <div className="mt-5">
+                              <Field
+                                label="Cloudinary Public ID"
+                                hint="Optional. Useful when the backend needs to manage the Cloudinary asset."
+                              >
+                                <input
+                                  value={
+                                    item.externalId
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    updateMedia(
+                                      index,
+                                      "externalId",
+                                      event
+                                        .target
+                                        .value,
+                                    )
+                                  }
+                                  placeholder="ministry/sermons/walking-in-purpose"
+                                  className="input"
+                                />
+                              </Field>
+                            </div>
+                          )}
                         </div>
                       ),
                     )}
@@ -888,21 +1295,30 @@ export default function NewResourcePage() {
                 <Toggle
                   label="Published"
                   description="Make this resource visible on the public website."
-                  checked={published}
-                  onChange={setPublished}
+                  checked={
+                    published
+                  }
+                  onChange={
+                    setPublished
+                  }
                 />
 
                 <Toggle
                   label="Featured"
                   description="Highlight this resource in featured sections."
-                  checked={featured}
-                  onChange={setFeatured}
+                  checked={
+                    featured
+                  }
+                  onChange={
+                    setFeatured
+                  }
                 />
               </div>
             </section>
 
-            {/* Selected categories */}
-            {selectedCategoryIds.length > 0 && (
+            {/* Selected Categories */}
+            {selectedCategoryIds.length >
+              0 && (
               <section className="border border-charcoal/10 bg-white p-6">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
                   Organization
@@ -914,20 +1330,54 @@ export default function NewResourcePage() {
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   {categories
-                    .filter((category) =>
-                      selectedCategoryIds.includes(
-                        category.id,
-                      ),
+                    .filter(
+                      (
+                        category,
+                      ) =>
+                        selectedCategoryIds.includes(
+                          category.id,
+                        ),
                     )
-                    .map((category) => (
-                      <span
-                        key={category.id}
-                        className="inline-flex items-center gap-1.5 bg-bronze/10 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze"
-                      >
-                        {category.name}
-                      </span>
-                    ))}
+                    .map(
+                      (
+                        category,
+                      ) => (
+                        <span
+                          key={
+                            category.id
+                          }
+                          className="inline-flex items-center gap-1.5 bg-bronze/10 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze"
+                        >
+                          {
+                            category.name
+                          }
+                        </span>
+                      ),
+                    )}
                 </div>
+              </section>
+            )}
+
+            {/* Selected Series */}
+            {selectedSeriesId && (
+              <section className="border border-charcoal/10 bg-white p-6">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Series
+                </p>
+
+                <h2 className="mt-2 text-sm font-medium">
+                  Selected series
+                </h2>
+
+                <p className="mt-3 text-xs text-charcoal/50">
+                  {
+                    series.find(
+                      (item) =>
+                        item.id ===
+                        selectedSeriesId,
+                    )?.title
+                  }
+                </p>
               </section>
             )}
 
@@ -953,7 +1403,8 @@ export default function NewResourcePage() {
                       size={15}
                       className="animate-spin"
                     />
-                    Creating Resource...
+                    Creating
+                    Resource...
                   </>
                 ) : (
                   <>
@@ -983,7 +1434,9 @@ export default function NewResourcePage() {
       {/* Success Dialog */}
       {showSuccess && (
         <SuccessDialog
-          onContinue={handleSuccessClose}
+          onContinue={
+            handleSuccessClose
+          }
         />
       )}
     </main>
@@ -1043,12 +1496,16 @@ function Toggle({
   label: string;
   description: string;
   checked: boolean;
-  onChange: (value: boolean) => void;
+  onChange: (
+    value: boolean,
+  ) => void;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onChange(!checked)}
+      onClick={() =>
+        onChange(!checked)
+      }
       className="flex w-full items-start gap-4 text-left"
     >
       <span
@@ -1111,18 +1568,24 @@ function SuccessDialog({
           </h2>
 
           <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-charcoal/45">
-            The resource has been successfully
-            added to your ministry library.
+            The resource has been
+            successfully added to
+            your ministry library.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={onContinue}
+          onClick={
+            onContinue
+          }
           className="mt-8 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
         >
-          Continue to Resources
-          <ArrowUpRight size={14} />
+          Continue to
+          Resources
+          <ArrowUpRight
+            size={14}
+          />
         </button>
       </div>
     </div>
