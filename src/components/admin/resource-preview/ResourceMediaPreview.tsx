@@ -10,7 +10,16 @@ import PdfPreview from "./PdfPreview";
 import YouTubePlayer from "./YouTubePlayer";
 
 interface ResourceMediaPreviewProps {
-  media?: AdminMedia | null;
+  media?: (Omit<AdminMedia, "id"> & {
+    id?: string;
+  }) | null;
+
+  /**
+   * Temporary browser URL used while
+   * editing/uploading a local file.
+   */
+  localPreviewUrl?: string | null;
+
   title?: string;
 }
 
@@ -21,12 +30,10 @@ function isYouTubeUrl(
 
   try {
     const hostname =
-      new URL(url).hostname;
+      new URL(url).hostname.toLowerCase();
 
     return (
-      hostname.includes(
-        "youtube.com",
-      ) ||
+      hostname.includes("youtube.com") ||
       hostname === "youtu.be"
     );
   } catch {
@@ -36,6 +43,7 @@ function isYouTubeUrl(
 
 export default function ResourceMediaPreview({
   media,
+  localPreviewUrl,
   title,
 }: ResourceMediaPreviewProps) {
   if (!media) {
@@ -54,7 +62,49 @@ export default function ResourceMediaPreview({
     );
   }
 
-  const url = media.url;
+  /*
+   * For uploaded Cloudinary media, media.url
+   * is used.
+   *
+   * For a local file that has not completed
+   * uploading yet, localPreviewUrl is used.
+   */
+  const url =
+    media.url ||
+    localPreviewUrl ||
+    "";
+
+  /*
+   * YouTube can work without a local URL.
+   */
+  if (
+    media.provider === "YOUTUBE"
+  ) {
+    const youtubeUrl =
+      media.url ||
+      media.externalId ||
+      "";
+
+    if (!youtubeUrl) {
+      return (
+        <div className="rounded-2xl border bg-muted/20 p-8 text-center">
+          <p className="text-sm font-medium">
+            YouTube URL unavailable
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <YouTubePlayer
+        url={youtubeUrl}
+        title={
+          media.title ||
+          title
+        }
+      />
+    );
+  }
 
   if (!url) {
     return (
@@ -64,16 +114,14 @@ export default function ResourceMediaPreview({
         </p>
 
         <p className="mt-1 text-xs text-muted-foreground">
-          This media asset does not have a
-          previewable URL.
+          This media asset does not have
+          a previewable URL.
         </p>
       </div>
     );
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* PDF                                                                     */
-  /* ---------------------------------------------------------------------- */
+  /* PDF */
 
   if (media.type === "PDF") {
     return (
@@ -81,9 +129,7 @@ export default function ResourceMediaPreview({
     );
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* IMAGE                                                                   */
-  /* ---------------------------------------------------------------------- */
+  /* IMAGE */
 
   if (media.type === "IMAGE") {
     return (
@@ -98,9 +144,7 @@ export default function ResourceMediaPreview({
     );
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* AUDIO                                                                   */
-  /* ---------------------------------------------------------------------- */
+  /* AUDIO */
 
   if (media.type === "AUDIO") {
     return (
@@ -114,29 +158,38 @@ export default function ResourceMediaPreview({
     );
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* VIDEO / YOUTUBE                                                         */
-  /* ---------------------------------------------------------------------- */
+  /* VIDEO */
 
   if (
-    media.type === "VIDEO" ||
-    media.provider === "YOUTUBE" ||
-    isYouTubeUrl(url)
+    media.type === "VIDEO"
   ) {
+    /*
+     * If this is actually a YouTube URL,
+     * use the YouTube player.
+     */
+    if (isYouTubeUrl(url)) {
+      return (
+        <YouTubePlayer
+          url={url}
+          title={
+            media.title ||
+            title
+          }
+        />
+      );
+    }
+
     return (
-      <YouTubePlayer
-        url={url}
-        title={
-          media.title ||
-          title
-        }
-      />
+      <div className="overflow-hidden rounded-2xl border bg-black shadow-sm">
+        <video
+          controls
+          preload="metadata"
+          src={url}
+          className="max-h-[620px] w-full"
+        />
+      </div>
     );
   }
-
-  /* ---------------------------------------------------------------------- */
-  /* Fallback                                                                */
-  /* ---------------------------------------------------------------------- */
 
   return (
     <div className="rounded-2xl border bg-muted/20 p-8 text-center">

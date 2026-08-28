@@ -11,13 +11,9 @@ import {
   Headphones,
   Image as ImageIcon,
   Loader2,
-  Pause,
-  Play,
   Trash2,
   Upload,
   Video,
-  Volume2,
-  VolumeX,
   X,
   Eye,
 } from "lucide-react";
@@ -42,6 +38,14 @@ import {
   type MediaType,
   type MediaProvider,
 } from "@/lib/admin-api";
+
+/*
+ * Dedicated media preview components.
+ *
+ * These replace the preview implementations that were
+ * previously defined directly inside this page.
+ */
+import ResourceMediaPreview from "@/components/admin/resource-preview/ResourceMediaPreview";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -151,27 +155,10 @@ function getYouTubeId(
   return match?.[1] ?? null;
 }
 
-function getYouTubeEmbedUrl(
-  url?: string,
-  externalId?: string,
-): string | null {
-  const id = getYouTubeId(url, externalId);
-
-  if (!id) {
-    return null;
-  }
-
-  return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
-}
-
-function formatFileSize(
-  value?: string,
-): string {
+function formatFileSize(value?: string): string {
   const bytes = Number(value);
 
-  if (
-    !Number.isFinite(bytes)
-  ) {
+  if (!Number.isFinite(bytes)) {
     return "";
   }
 
@@ -191,43 +178,6 @@ function formatFileSize(
     bytes /
     (1024 * 1024 * 1024)
   ).toFixed(1)} GB`;
-}
-
-function formatDuration(
-  seconds?: number,
-): string {
-  if (
-    seconds === undefined ||
-    !Number.isFinite(seconds)
-  ) {
-    return "00:00";
-  }
-
-  const total = Math.max(
-    0,
-    Math.floor(seconds),
-  );
-
-  const hours = Math.floor(total / 3600);
-
-  const minutes = Math.floor(
-    (total % 3600) / 60,
-  );
-
-  const secs = total % 60;
-
-  if (hours > 0) {
-    return [
-      hours,
-      String(minutes).padStart(2, "0"),
-      String(secs).padStart(2, "0"),
-    ].join(":");
-  }
-
-  return [
-    String(minutes).padStart(2, "0"),
-    String(secs).padStart(2, "0"),
-  ].join(":");
 }
 
 function slugify(value: string) {
@@ -504,8 +454,9 @@ export default function EditResourcePage() {
             item.mimeType ??
             undefined,
           fileSize:
-            item.fileSize ??
-            undefined,
+            item.fileSize != null
+              ? String(item.fileSize)
+              : undefined,
           duration:
             typeof item.duration ===
             "number"
@@ -680,11 +631,9 @@ export default function EditResourcePage() {
           uploaded.data.duration,
       });
     } catch (err) {
-      if (localPreviewUrl) {
-        URL.revokeObjectURL(
-          localPreviewUrl,
-        );
-      }
+      URL.revokeObjectURL(
+        localPreviewUrl,
+      );
 
       updateMedia(index, {
         uploading: false,
@@ -874,13 +823,6 @@ export default function EditResourcePage() {
               item.duration,
           }));
 
-      /*
-       * UpdateResourceInput already represents
-       * the PATCH payload expected by the backend.
-       *
-       * Tags are intentionally not included because
-       * this screen does not manage tags.
-       */
       const input: UpdateResourceInput =
         {
           title: trimmedTitle,
@@ -996,9 +938,7 @@ export default function EditResourcePage() {
 
   return (
     <main className="min-h-screen bg-ivory text-charcoal">
-      {/* -------------------------------------------------------------------- */}
-      {/* Header                                                               */}
-      {/* -------------------------------------------------------------------- */}
+      {/* Header -------------------------------------------------------------- */}
 
       <header className="border-b border-charcoal/10 bg-white">
         <div className="mx-auto max-w-[1400px] px-6 py-6 lg:px-10">
@@ -1032,9 +972,7 @@ export default function EditResourcePage() {
           className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
           <div className="space-y-8">
-            {/* ---------------------------------------------------------------- */}
-            {/* Basic Information                                                */}
-            {/* ---------------------------------------------------------------- */}
+            {/* Basic Information -------------------------------------------- */}
 
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
@@ -1158,9 +1096,7 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {/* ---------------------------------------------------------------- */}
-            {/* Categories                                                        */}
-            {/* ---------------------------------------------------------------- */}
+            {/* Categories ---------------------------------------------------- */}
 
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
@@ -1289,9 +1225,7 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {/* ---------------------------------------------------------------- */}
-            {/* Media                                                             */}
-            {/* ---------------------------------------------------------------- */}
+            {/* Media --------------------------------------------------------- */}
 
             <section className="border border-charcoal/10 bg-white">
               <div className="flex items-center justify-between border-b border-charcoal/10 px-6 py-5">
@@ -1385,9 +1319,7 @@ export default function EditResourcePage() {
             </section>
           </div>
 
-          {/* ------------------------------------------------------------------ */}
-          {/* Sidebar                                                            */}
-          {/* ------------------------------------------------------------------ */}
+          {/* Sidebar --------------------------------------------------------- */}
 
           <aside className="space-y-6">
             <section className="border border-charcoal/10 bg-white">
@@ -1506,9 +1438,7 @@ export default function EditResourcePage() {
         </form>
       </div>
 
-      {/* -------------------------------------------------------------------- */}
-      {/* Preview                                                               */}
-      {/* -------------------------------------------------------------------- */}
+      {/* Preview ------------------------------------------------------------- */}
 
       {showPreview && (
         <PreviewDialog
@@ -1524,9 +1454,7 @@ export default function EditResourcePage() {
         />
       )}
 
-      {/* -------------------------------------------------------------------- */}
-      {/* Success                                                               */}
-      {/* -------------------------------------------------------------------- */}
+      {/* Success ------------------------------------------------------------- */}
 
       {showSuccess && (
         <SuccessDialog
@@ -1574,14 +1502,6 @@ function MediaEditor({
     ) : (
       <Video size={16} />
     );
-
-  const youtubeEmbed =
-    item.provider === "YOUTUBE"
-      ? getYouTubeEmbedUrl(
-          item.url,
-          item.externalId,
-        )
-      : null;
 
   const source =
     item.url ||
@@ -1660,10 +1580,6 @@ function MediaEditor({
                 event.target
                   .value as MediaProvider;
 
-              /*
-               * Switching away from YouTube
-               * removes the YouTube-only ID.
-               */
               onUpdate({
                 provider,
                 externalId:
@@ -1735,7 +1651,7 @@ function MediaEditor({
               ref={fileInput}
               type="file"
               className="hidden"
-              accept="audio/*,image/*,application/pdf"
+              accept="audio/*,video/*,image/*,application/pdf"
               onChange={(
                 event: ChangeEvent<HTMLInputElement>,
               ) => {
@@ -1871,344 +1787,24 @@ function MediaEditor({
         </>
       )}
 
-      {/* Existing/new media preview ----------------------------------------- */}
+      {/* Dedicated media preview --------------------------------------------- */}
 
       {(source ||
-        youtubeEmbed) && (
+        item.externalId) && (
         <div className="mt-5 overflow-hidden border border-charcoal/10 bg-black">
-          {item.provider ===
-          "YOUTUBE" ? (
-            youtubeEmbed ? (
-              <YouTubePlayer
-                src={youtubeEmbed}
-                title={
-                  item.title ||
-                  "YouTube media"
-                }
-              />
-            ) : (
-              <div className="p-5 text-sm text-white/50">
-                Enter a valid YouTube
-                URL or video ID to
-                preview this media.
-              </div>
-            )
-          ) : (
-            <MediaVisualization
-              media={item}
-            />
-          )}
+          <ResourceMediaPreview
+            media={item}
+            localPreviewUrl={
+              item.localPreviewUrl
+            }
+            title={
+              item.title ||
+              item.fileName ||
+              "Media preview"
+            }
+          />
         </div>
       )}
-    </div>
-  );
-}
-
-/* ========================================================================== */
-/* Media Visualization                                                        */
-/* ========================================================================== */
-
-function MediaVisualization({
-  media,
-}: {
-  media: MediaItem;
-}) {
-  const source =
-    media.url ||
-    media.localPreviewUrl;
-
-  if (!source) {
-    return null;
-  }
-
-  if (media.type === "IMAGE") {
-    return (
-      <div className="flex max-h-80 items-center justify-center bg-charcoal/5 p-3">
-        <img
-          src={source}
-          alt={
-            media.title ||
-            media.fileName ||
-            "Uploaded image"
-          }
-          className="max-h-72 w-full object-contain"
-        />
-      </div>
-    );
-  }
-
-  if (media.type === "PDF") {
-    return (
-      <div className="h-[420px] bg-white">
-        <iframe
-          src={source}
-          title={
-            media.title ||
-            "PDF preview"
-          }
-          className="h-full w-full"
-        />
-      </div>
-    );
-  }
-
-  if (media.type === "AUDIO") {
-    return (
-      <div className="bg-charcoal p-5">
-        <CustomAudioPlayer
-          src={source}
-          title={
-            media.title ||
-            media.fileName ||
-            "Audio"
-          }
-        />
-      </div>
-    );
-  }
-
-  return (
-    <video
-      controls
-      preload="metadata"
-      className="max-h-[420px] w-full bg-black"
-      src={source}
-    />
-  );
-}
-
-/* ========================================================================== */
-/* Custom Audio Player                                                        */
-/* ========================================================================== */
-
-function CustomAudioPlayer({
-  src,
-  title,
-}: {
-  src: string;
-  title: string;
-}) {
-  const audioRef =
-    useRef<HTMLAudioElement | null>(
-      null,
-    );
-
-  const [playing, setPlaying] =
-    useState(false);
-
-  const [currentTime, setCurrentTime] =
-    useState(0);
-
-  const [duration, setDuration] =
-    useState(0);
-
-  const [muted, setMuted] =
-    useState(false);
-
-  function togglePlay() {
-    const audio =
-      audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    if (audio.paused) {
-      void audio.play();
-    } else {
-      audio.pause();
-    }
-  }
-
-  function seek(
-    event: ChangeEvent<HTMLInputElement>,
-  ) {
-    const audio =
-      audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    const value =
-      Number(event.target.value);
-
-    audio.currentTime = value;
-    setCurrentTime(value);
-  }
-
-  function toggleMute() {
-    const audio =
-      audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    audio.muted = !audio.muted;
-    setMuted(audio.muted);
-  }
-
-  function handleLoadedMetadata() {
-    const audio =
-      audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    setDuration(
-      Number.isFinite(audio.duration)
-        ? audio.duration
-        : 0,
-    );
-  }
-
-  return (
-    <div className="text-white">
-      <audio
-        ref={audioRef}
-        src={src}
-        preload="metadata"
-        onLoadedMetadata={
-          handleLoadedMetadata
-        }
-        onTimeUpdate={() => {
-          if (audioRef.current) {
-            setCurrentTime(
-              audioRef.current
-                .currentTime,
-            );
-          }
-        }}
-        onPlay={() =>
-          setPlaying(true)
-        }
-        onPause={() =>
-          setPlaying(false)
-        }
-        onEnded={() =>
-          setPlaying(false)
-        }
-      />
-
-      <div className="flex items-center gap-4">
-        <button
-          type="button"
-          onClick={togglePlay}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-charcoal transition hover:bg-bronze hover:text-white"
-          aria-label={
-            playing
-              ? "Pause audio"
-              : "Play audio"
-          }
-        >
-          {playing ? (
-            <Pause
-              size={17}
-              fill="currentColor"
-            />
-          ) : (
-            <Play
-              size={17}
-              fill="currentColor"
-              className="ml-0.5"
-            />
-          )}
-        </button>
-
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-medium">
-            {title}
-          </p>
-
-          <div className="mt-2">
-            <input
-              type="range"
-              min="0"
-              max={duration || 0}
-              step="0.1"
-              value={Math.min(
-                currentTime,
-                duration || 0,
-              )}
-              onChange={seek}
-              className="w-full accent-[#9b6a43]"
-            />
-          </div>
-
-          <div className="mt-1 flex justify-between text-[10px] text-white/40">
-            <span>
-              {formatDuration(
-                currentTime,
-              )}
-            </span>
-
-            <span>
-              {formatDuration(
-                duration,
-              )}
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={toggleMute}
-          className="shrink-0 text-white/60 hover:text-white"
-          aria-label={
-            muted
-              ? "Unmute audio"
-              : "Mute audio"
-          }
-        >
-          {muted ? (
-            <VolumeX size={17} />
-          ) : (
-            <Volume2 size={17} />
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================================== */
-/* YouTube Player                                                             */
-/* ========================================================================== */
-
-function YouTubePlayer({
-  src,
-  title,
-}: {
-  src: string;
-  title: string;
-}) {
-  return (
-    <div className="bg-black">
-      <div className="relative aspect-video w-full">
-        <iframe
-          src={src}
-          title={title}
-          className="absolute inset-0 h-full w-full"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-        />
-      </div>
-
-      <div className="flex items-center justify-between border-t border-white/10 px-4 py-3">
-        <div className="flex items-center gap-2 text-white/60">
-          <Video size={14} />
-
-          <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-            YouTube Preview
-          </span>
-        </div>
-
-        <span className="truncate text-[10px] text-white/30">
-          {title}
-        </span>
-      </div>
     </div>
   );
 }
@@ -2316,7 +1912,7 @@ function PreviewDialog({
                   <PreviewMedia
                     key={
                       item.id ??
-                      index
+                      `preview-${index}`
                     }
                     media={item}
                   />
@@ -2339,121 +1935,6 @@ function PreviewMedia({
 }: {
   media: MediaItem;
 }) {
-  if (
-    media.provider ===
-    "YOUTUBE"
-  ) {
-    const embed =
-      getYouTubeEmbedUrl(
-        media.url,
-        media.externalId,
-      );
-
-    if (!embed) {
-      return (
-        <div className="border border-red-500/10 bg-red-500/[0.03] p-5 text-sm text-red-600">
-          Invalid YouTube URL or
-          video ID.
-        </div>
-      );
-    }
-
-    return (
-      <div>
-        {media.title && (
-          <p className="mb-3 text-xs font-medium text-charcoal/60">
-            {media.title}
-          </p>
-        )}
-
-        <YouTubePlayer
-          src={embed}
-          title={
-            media.title ||
-            "YouTube media"
-          }
-        />
-      </div>
-    );
-  }
-
-  const source =
-    media.url ||
-    media.localPreviewUrl;
-
-  if (!source) {
-    return null;
-  }
-
-  if (media.type === "IMAGE") {
-    return (
-      <div>
-        {media.title && (
-          <p className="mb-3 text-xs font-medium text-charcoal/60">
-            {media.title}
-          </p>
-        )}
-
-        <div className="flex min-h-40 items-center justify-center border border-charcoal/10 bg-charcoal/[0.02] p-4">
-          <img
-            src={source}
-            alt={
-              media.title ||
-              "Resource image"
-            }
-            className="max-h-[620px] w-full object-contain"
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (media.type === "PDF") {
-    return (
-      <div>
-        {media.title && (
-          <p className="mb-3 text-xs font-medium text-charcoal/60">
-            {media.title}
-          </p>
-        )}
-
-        <div className="h-[650px] overflow-hidden border border-charcoal/10 bg-charcoal/5">
-          <iframe
-            src={source}
-            title={
-              media.title ||
-              "PDF preview"
-            }
-            className="h-full w-full bg-white"
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (media.type === "AUDIO") {
-    return (
-      <div>
-        {media.title && (
-          <p className="mb-3 text-xs font-medium text-charcoal/60">
-            {media.title}
-          </p>
-        )}
-
-        <div className="bg-charcoal p-6">
-          <CustomAudioPlayer
-            src={source}
-            title={
-              media.title ||
-              media.fileName ||
-              "Audio"
-            }
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
       {media.title && (
@@ -2462,11 +1943,16 @@ function PreviewMedia({
         </p>
       )}
 
-      <video
-        controls
-        preload="metadata"
-        className="max-h-[620px] w-full bg-black"
-        src={source}
+      <ResourceMediaPreview
+        media={media}
+        localPreviewUrl={
+          media.localPreviewUrl
+        }
+        title={
+          media.title ||
+          media.fileName ||
+          "Resource media"
+        }
       />
     </div>
   );
