@@ -21,7 +21,7 @@ interface MediaItem {
   externalId: string;
   storageKey?: string;
   mimeType?: string;
-  fileSize?: number;
+  fileSize?: string;
   uploading?: boolean;
   fileName?: string;
   localPreviewUrl?: string;
@@ -102,7 +102,7 @@ export default function NewResourcePage() {
     updateMedia(index, { type: mediaType, provider: "CLOUDINARY", uploading: true, fileName: file.name, localPreviewUrl, url: "", externalId: "" });
     try {
       const uploaded = await uploadToCloudinary(file);
-      updateMedia(index, { type: mediaType, provider: "CLOUDINARY", uploading: false, url: uploaded.secure_url, storageKey: uploaded.public_id, mimeType: file.type, fileSize: uploaded.bytes ?? file.size });
+      updateMedia(index, { type: mediaType, provider: "CLOUDINARY", uploading: false, url: uploaded.secure_url, storageKey: uploaded.public_id, mimeType: file.type, fileSize: String(p.bytes ?? file.size)});
     } catch (e) {
       URL.revokeObjectURL(localPreviewUrl);
       updateMedia(index, { uploading: false, localPreviewUrl: undefined, url: "" });
