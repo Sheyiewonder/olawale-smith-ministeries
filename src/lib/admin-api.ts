@@ -207,7 +207,7 @@ export interface CreateMediaInput {
    * Keep this as string because MediaAsset.fileSize
    * is String in Prisma.
    */
-  fileSize?: number;
+  fileSize?: string;
 
   duration?: number;
 }
