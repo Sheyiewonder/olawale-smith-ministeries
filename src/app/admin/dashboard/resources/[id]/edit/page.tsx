@@ -7,13 +7,17 @@ import {
   ArrowUpRight,
   Check,
   FileText,
+  Files,
   Headphones,
   Image as ImageIcon,
   Loader2,
-  Plus,
+  Pause,
+  Play,
   Trash2,
   Upload,
   Video,
+  Volume2,
+  VolumeX,
   X,
   Eye,
 } from "lucide-react";
@@ -22,6 +26,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ChangeEvent,
   type ReactNode,
 } from "react";
 
@@ -29,6 +34,7 @@ import {
   getAdminCategories,
   getAdminResource,
   updateResource,
+  uploadAdminMedia,
   type AdminCategory,
   type AdminResource,
   type UpdateResourceInput,
@@ -46,21 +52,26 @@ interface MediaItem {
 
   type: MediaType;
   provider: MediaProvider;
-
   title: string;
+
   url: string;
   externalId: string;
 
   storageKey?: string;
   mimeType?: string;
-
-  /*
-   * Prisma stores fileSize as String.
-   */
   fileSize?: string;
+  duration?: number;
 
   uploading?: boolean;
   fileName?: string;
+
+  /*
+   * Browser-only preview URL.
+   *
+   * This allows a newly selected device file to be
+   * previewed immediately while the Cloudinary upload
+   * happens in the background.
+   */
   localPreviewUrl?: string;
 }
 
@@ -103,25 +114,6 @@ const mediaProviders: {
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function cloudinaryConfig() {
-  const cloudName =
-    process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-
-  const uploadPreset =
-    process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-
-  if (!cloudName || !uploadPreset) {
-    throw new Error(
-      "Cloudinary upload is not configured.",
-    );
-  }
-
-  return {
-    cloudName,
-    uploadPreset,
-  };
-}
-
 function inferMediaType(file: File): MediaType {
   if (file.type.startsWith("audio/")) {
     return "AUDIO";
@@ -138,43 +130,104 @@ function inferMediaType(file: File): MediaType {
   return "VIDEO";
 }
 
-async function uploadToCloudinary(file: File) {
-  const {
-    cloudName,
-    uploadPreset,
-  } = cloudinaryConfig();
-
-  const form = new FormData();
-
-  form.append("file", file);
-  form.append("upload_preset", uploadPreset);
-  form.append(
-    "folder",
-    "olawale-smith-ministries/resources",
-  );
-
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`,
-    {
-      method: "POST",
-      body: form,
-    },
-  );
-
-  const payload = await response.json();
-
-  if (!response.ok || !payload.secure_url) {
-    throw new Error(
-      payload.error?.message ||
-        "Cloudinary upload failed.",
-    );
+function getYouTubeId(
+  url?: string,
+  externalId?: string,
+): string | null {
+  if (externalId?.trim()) {
+    return externalId.trim();
   }
 
-  return payload as {
-    secure_url: string;
-    public_id?: string;
-    bytes?: number;
-  };
+  if (!url?.trim()) {
+    return null;
+  }
+
+  const value = url.trim();
+
+  const match = value.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([^?&/]+)/i,
+  );
+
+  return match?.[1] ?? null;
+}
+
+function getYouTubeEmbedUrl(
+  url?: string,
+  externalId?: string,
+): string | null {
+  const id = getYouTubeId(url, externalId);
+
+  if (!id) {
+    return null;
+  }
+
+  return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
+}
+
+function formatFileSize(
+  value?: string,
+): string {
+  const bytes = Number(value);
+
+  if (
+    !Number.isFinite(bytes)
+  ) {
+    return "";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return `${(
+    bytes /
+    (1024 * 1024 * 1024)
+  ).toFixed(1)} GB`;
+}
+
+function formatDuration(
+  seconds?: number,
+): string {
+  if (
+    seconds === undefined ||
+    !Number.isFinite(seconds)
+  ) {
+    return "00:00";
+  }
+
+  const total = Math.max(
+    0,
+    Math.floor(seconds),
+  );
+
+  const hours = Math.floor(total / 3600);
+
+  const minutes = Math.floor(
+    (total % 3600) / 60,
+  );
+
+  const secs = total % 60;
+
+  if (hours > 0) {
+    return [
+      hours,
+      String(minutes).padStart(2, "0"),
+      String(secs).padStart(2, "0"),
+    ].join(":");
+  }
+
+  return [
+    String(minutes).padStart(2, "0"),
+    String(secs).padStart(2, "0"),
+  ].join(":");
 }
 
 function slugify(value: string) {
@@ -199,22 +252,29 @@ export default function EditResourcePage() {
       ? params.id
       : "";
 
+  /* ------------------------------------------------------------------------ */
+  /* Loading                                                                  */
+  /* ------------------------------------------------------------------------ */
+
   const [loading, setLoading] =
     useState(true);
 
   const [loadingError, setLoadingError] =
     useState("");
 
-  const [categoriesLoading, setCategoriesLoading] =
-    useState(true);
+  /* ------------------------------------------------------------------------ */
+  /* Resource                                                                 */
+  /* ------------------------------------------------------------------------ */
 
-  const [categoriesError, setCategoriesError] =
+  const [title, setTitle] =
     useState("");
 
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
+  const [slug, setSlug] =
+    useState("");
+
   const [description, setDescription] =
     useState("");
+
   const [content, setContent] =
     useState("");
 
@@ -230,14 +290,38 @@ export default function EditResourcePage() {
   const [published, setPublished] =
     useState(false);
 
+  /* ------------------------------------------------------------------------ */
+  /* Categories                                                               */
+  /* ------------------------------------------------------------------------ */
+
   const [categories, setCategories] =
     useState<AdminCategory[]>([]);
 
-  const [selectedCategoryIds, setSelectedCategoryIds] =
-    useState<string[]>([]);
+  const [
+    selectedCategoryIds,
+    setSelectedCategoryIds,
+  ] = useState<string[]>([]);
+
+  const [
+    categoriesLoading,
+    setCategoriesLoading,
+  ] = useState(true);
+
+  const [
+    categoriesError,
+    setCategoriesError,
+  ] = useState("");
+
+  /* ------------------------------------------------------------------------ */
+  /* Media                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   const [media, setMedia] =
     useState<MediaItem[]>([]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Submission                                                               */
+  /* ------------------------------------------------------------------------ */
 
   const [saving, setSaving] =
     useState(false);
@@ -251,13 +335,12 @@ export default function EditResourcePage() {
   const [showSuccess, setShowSuccess] =
     useState(false);
 
-  const fileInputs =
-    useRef<Record<number, HTMLInputElement | null>>(
-      {},
-    );
+  const fileInputs = useRef<
+    Record<number, HTMLInputElement | null>
+  >({});
 
   /* ------------------------------------------------------------------------ */
-  /* Load Resource                                                            */
+  /* Load resource                                                            */
   /* ------------------------------------------------------------------------ */
 
   async function loadResource() {
@@ -277,10 +360,10 @@ export default function EditResourcePage() {
         await getAdminResource(resourceId);
 
       populateResource(response.data);
-    } catch (e) {
+    } catch (err) {
       setLoadingError(
-        e instanceof Error
-          ? e.message
+        err instanceof Error
+          ? err.message
           : "Unable to load resource.",
       );
     } finally {
@@ -289,7 +372,7 @@ export default function EditResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Load Categories                                                          */
+  /* Load categories                                                          */
   /* ------------------------------------------------------------------------ */
 
   async function loadCategories() {
@@ -303,10 +386,10 @@ export default function EditResourcePage() {
       setCategories(
         response.data ?? [],
       );
-    } catch (e) {
+    } catch (err) {
       setCategoriesError(
-        e instanceof Error
-          ? e.message
+        err instanceof Error
+          ? err.message
           : "Unable to load categories.",
       );
     } finally {
@@ -314,24 +397,53 @@ export default function EditResourcePage() {
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Initial load                                                             */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
     loadResource();
     loadCategories();
   }, [resourceId]);
 
   /* ------------------------------------------------------------------------ */
-  /* Populate Form                                                            */
+  /* Cleanup local preview URLs                                               */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    return () => {
+      media.forEach((item) => {
+        if (item.localPreviewUrl) {
+          URL.revokeObjectURL(
+            item.localPreviewUrl,
+          );
+        }
+      });
+    };
+  }, [media]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Populate resource                                                        */
   /* ------------------------------------------------------------------------ */
 
   function populateResource(
     resource: AdminResource,
   ) {
-    setTitle(resource.title ?? "");
-    setSlug(resource.slug ?? "");
+    setTitle(
+      resource.title ?? "",
+    );
+
+    setSlug(
+      resource.slug ?? "",
+    );
+
     setDescription(
       resource.description ?? "",
     );
-    setContent(resource.content ?? "");
+
+    setContent(
+      resource.content ?? "",
+    );
 
     setType(
       resource.type ?? "SERMON",
@@ -349,65 +461,87 @@ export default function EditResourcePage() {
       Boolean(resource.published),
     );
 
+    const categoryIds = (
+      resource.categories ?? []
+    )
+      .map(
+        (item) =>
+          item.categoryId ??
+          item.category?.id,
+      )
+      .filter(
+        (
+          id,
+        ): id is string =>
+          Boolean(id),
+      );
+
     setSelectedCategoryIds(
-      (resource.categories ?? [])
-        .map(
-          (category) =>
-            category.categoryId ??
-            category.category?.id,
-        )
-        .filter(
-          (
-            id,
-          ): id is string =>
-            Boolean(id),
-        ),
+      categoryIds,
     );
 
     /*
-     * IMPORTANT:
+     * Preserve existing media IDs.
      *
-     * fileSize comes from Prisma as a String.
-     * We therefore preserve it as a string.
+     * This is important because the backend can
+     * distinguish existing media from newly added
+     * media when the resource is updated.
      */
     setMedia(
       (resource.media ?? []).map(
-        (mediaItem) => ({
-          id: mediaItem.id,
-
-          type: mediaItem.type,
-
-          provider:
-            mediaItem.provider,
-
-          title:
-            mediaItem.title ?? "",
-
-          url:
-            mediaItem.url ?? "",
-
+        (item) => ({
+          id: item.id,
+          type: item.type,
+          provider: item.provider,
+          title: item.title ?? "",
+          url: item.url ?? "",
           externalId:
-            mediaItem.externalId ?? "",
-
+            item.externalId ?? "",
           storageKey:
-            mediaItem.storageKey ??
+            item.storageKey ??
             undefined,
-
           mimeType:
-            mediaItem.mimeType ??
+            item.mimeType ??
             undefined,
-
           fileSize:
-            mediaItem.fileSize ??
+            item.fileSize ??
             undefined,
+          duration:
+            typeof item.duration ===
+            "number"
+              ? item.duration
+              : undefined,
         }),
       ),
     );
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Categories                                                               */
+  /* Basic handlers                                                           */
   /* ------------------------------------------------------------------------ */
+
+  function handleTitleChange(
+    value: string,
+  ) {
+    setTitle(value);
+
+    /*
+     * Only generate a slug automatically when
+     * the existing resource does not have one.
+     *
+     * This prevents changing a title from
+     * silently changing an existing public URL.
+     */
+    if (!slug.trim()) {
+      setSlug(slugify(value));
+    }
+  }
+
+  function handleSlugChange(
+    value: string,
+  ) {
+    setSlug(slugify(value));
+  }
 
   function toggleCategory(
     id: string,
@@ -416,14 +550,15 @@ export default function EditResourcePage() {
       (current) =>
         current.includes(id)
           ? current.filter(
-              (item) => item !== id,
+              (item) =>
+                item !== id,
             )
           : [...current, id],
     );
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Media                                                                     */
+  /* Media handlers                                                           */
   /* ------------------------------------------------------------------------ */
 
   function addMedia() {
@@ -444,8 +579,8 @@ export default function EditResourcePage() {
     patch: Partial<MediaItem>,
   ) {
     setMedia((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index
+      current.map((item, i) =>
+        i === index
           ? {
               ...item,
               ...patch,
@@ -458,16 +593,23 @@ export default function EditResourcePage() {
   function removeMedia(
     index: number,
   ) {
+    const item = media[index];
+
+    if (item?.localPreviewUrl) {
+      URL.revokeObjectURL(
+        item.localPreviewUrl,
+      );
+    }
+
     setMedia((current) =>
       current.filter(
-        (_, itemIndex) =>
-          itemIndex !== index,
+        (_, i) => i !== index,
       ),
     );
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Cloudinary Upload                                                        */
+  /* Device upload                                                            */
   /* ------------------------------------------------------------------------ */
 
   async function handleFileUpload(
@@ -478,12 +620,21 @@ export default function EditResourcePage() {
       return;
     }
 
+    setError("");
+
     const mediaType =
       inferMediaType(file);
 
+    /*
+     * Create the browser preview immediately.
+     */
     const localPreviewUrl =
       URL.createObjectURL(file);
 
+    /*
+     * Update the UI immediately before the
+     * Cloudinary upload starts.
+     */
     updateMedia(index, {
       type: mediaType,
       provider: "CLOUDINARY",
@@ -492,82 +643,131 @@ export default function EditResourcePage() {
       localPreviewUrl,
       url: "",
       externalId: "",
+      storageKey: undefined,
+      mimeType: file.type,
+      fileSize: String(file.size),
+      duration: undefined,
     });
 
     try {
-      const payload =
-        await uploadToCloudinary(file);
+      /*
+       * Upload through the authenticated backend.
+       *
+       * The browser does not communicate with
+       * Cloudinary directly.
+       */
+      const uploaded =
+        await uploadAdminMedia(
+          file,
+          mediaType as
+            | "AUDIO"
+            | "PDF"
+            | "IMAGE",
+        );
 
       updateMedia(index, {
-        provider: "CLOUDINARY",
         type: mediaType,
+        provider: "CLOUDINARY",
         uploading: false,
-        url: payload.secure_url,
-        storageKey: payload.public_id,
+        url:
+          uploaded.data.secureUrl,
+        storageKey:
+          uploaded.data.publicId,
         mimeType: file.type,
-        fileSize: String(payload.bytes ?? file.size),
+        fileSize:
+          String(uploaded.data.bytes),
+        duration:
+          uploaded.data.duration,
       });
-
-    } catch (e) {
-      URL.revokeObjectURL(
-        localPreviewUrl,
-      );
+    } catch (err) {
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(
+          localPreviewUrl,
+        );
+      }
 
       updateMedia(index, {
         uploading: false,
-        localPreviewUrl: undefined,
+        localPreviewUrl:
+          undefined,
         url: "",
+        storageKey:
+          undefined,
+        mimeType:
+          undefined,
+        fileSize:
+          undefined,
+        duration:
+          undefined,
       });
 
       setError(
-        e instanceof Error
-          ? e.message
+        err instanceof Error
+          ? err.message
           : "Unable to upload media.",
       );
     }
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Media Validation                                                         */
+  /* Media validation                                                         */
   /* ------------------------------------------------------------------------ */
 
   function validateMedia() {
     for (
-      let index = 0;
-      index < media.length;
-      index++
+      let i = 0;
+      i < media.length;
+      i++
     ) {
-      const item = media[index];
+      const item = media[i];
 
       if (item.uploading) {
         return `Media ${
-          index + 1
+          i + 1
         }: Please wait for the upload to finish.`;
       }
 
       /*
-       * Completely empty media rows
-       * are allowed.
+       * Empty media cards are ignored.
        */
+      const hasUrl =
+        Boolean(item.url.trim());
+
+      const hasExternalId =
+        Boolean(
+          item.externalId.trim(),
+        );
+
       if (
-        !item.url.trim() &&
-        !item.externalId.trim()
+        !hasUrl &&
+        !hasExternalId
       ) {
         continue;
       }
 
       if (!item.type) {
         return `Media ${
-          index + 1
+          i + 1
         }: Media type is required.`;
       }
 
       if (
-        item.provider !== "YOUTUBE" &&
-        !item.url.trim()
+        item.provider ===
+        "YOUTUBE"
       ) {
+        if (
+          !getYouTubeId(
+            item.url,
+            item.externalId,
+          )
+        ) {
+          return `Media ${
+            i + 1
+          }: Please provide a valid YouTube URL or video ID.`;
+        }
+      } else if (!hasUrl) {
         return `Media ${
-          index + 1
+          i + 1
         }: Please provide a media URL.`;
       }
     }
@@ -576,7 +776,7 @@ export default function EditResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Submit                                                                    */
+  /* Submit                                                                   */
   /* ------------------------------------------------------------------------ */
 
   async function handleSubmit(
@@ -606,6 +806,13 @@ export default function EditResourcePage() {
       return;
     }
 
+    if (!resourceId) {
+      setError(
+        "Resource ID is missing.",
+      );
+      return;
+    }
+
     const mediaError =
       validateMedia();
 
@@ -617,39 +824,26 @@ export default function EditResourcePage() {
     try {
       setSaving(true);
 
-      const input: UpdateResourceInput = {
-        title: trimmedTitle,
-
-        slug: trimmedSlug,
-
-        description:
-          description.trim() ||
-          undefined,
-
-        content:
-          content.trim() ||
-          undefined,
-
-        type,
-
-        speaker:
-          speaker.trim() ||
-          undefined,
-
-        featured,
-
-        published,
-
-        categoryIds:
-          selectedCategoryIds,
-
-        media: media
+      /*
+       * Do not send empty media cards.
+       */
+      const cleanedMedia =
+        media
           .filter(
             (item) =>
               item.url.trim() ||
               item.externalId.trim(),
           )
           .map((item) => ({
+            /*
+             * Preserve the ID for existing media.
+             *
+             * New media won't have an ID.
+             */
+            ...(item.id
+              ? { id: item.id }
+              : {}),
+
             type: item.type,
 
             provider:
@@ -673,13 +867,49 @@ export default function EditResourcePage() {
             mimeType:
               item.mimeType,
 
-            /*
-             * Already a string.
-             */
             fileSize:
               item.fileSize,
-          })),
-      };
+
+            duration:
+              item.duration,
+          }));
+
+      /*
+       * UpdateResourceInput already represents
+       * the PATCH payload expected by the backend.
+       *
+       * Tags are intentionally not included because
+       * this screen does not manage tags.
+       */
+      const input: UpdateResourceInput =
+        {
+          title: trimmedTitle,
+
+          slug: trimmedSlug,
+
+          description:
+            description.trim() ||
+            undefined,
+
+          content:
+            content.trim() ||
+            undefined,
+
+          type,
+
+          speaker:
+            speaker.trim() ||
+            undefined,
+
+          featured,
+
+          published,
+
+          categoryIds:
+            selectedCategoryIds,
+
+          media: cleanedMedia,
+        };
 
       await updateResource(
         resourceId,
@@ -687,10 +917,10 @@ export default function EditResourcePage() {
       );
 
       setShowSuccess(true);
-    } catch (e) {
+    } catch (err) {
       setError(
-        e instanceof Error
-          ? e.message
+        err instanceof Error
+          ? err.message
           : "Unable to update resource.",
       );
     } finally {
@@ -699,7 +929,7 @@ export default function EditResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Loading                                                                   */
+  /* Loading state                                                             */
   /* ------------------------------------------------------------------------ */
 
   if (loading) {
@@ -710,6 +940,7 @@ export default function EditResourcePage() {
             size={18}
             className="animate-spin text-bronze"
           />
+
           Loading resource...
         </div>
       </main>
@@ -717,7 +948,7 @@ export default function EditResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Loading Error                                                             */
+  /* Loading error                                                             */
   /* ------------------------------------------------------------------------ */
 
   if (loadingError) {
@@ -736,18 +967,21 @@ export default function EditResourcePage() {
             {loadingError}
           </p>
 
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button
+              type="button"
               onClick={loadResource}
-              className="bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory"
+              className="inline-flex items-center gap-2 bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
             >
+              <Loader2 size={14} />
               Try Again
             </button>
 
             <Link
               href="/admin/dashboard/resources"
-              className="border border-charcoal/10 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/60"
+              className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/60 transition-colors hover:border-charcoal/20 hover:text-charcoal"
             >
+              <ArrowLeft size={14} />
               Back to Resources
             </Link>
           </div>
@@ -757,16 +991,20 @@ export default function EditResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Main                                                                      */
+  /* Render                                                                   */
   /* ------------------------------------------------------------------------ */
 
   return (
     <main className="min-h-screen bg-ivory text-charcoal">
+      {/* -------------------------------------------------------------------- */}
+      {/* Header                                                               */}
+      {/* -------------------------------------------------------------------- */}
+
       <header className="border-b border-charcoal/10 bg-white">
         <div className="mx-auto max-w-[1400px] px-6 py-6 lg:px-10">
           <Link
             href="/admin/dashboard/resources"
-            className="mb-4 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/45 hover:text-bronze"
+            className="mb-4 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/45 transition-colors hover:text-bronze"
           >
             <ArrowLeft size={14} />
             Back to Resources
@@ -782,8 +1020,8 @@ export default function EditResourcePage() {
 
           <p className="mt-2 max-w-xl text-sm leading-6 text-charcoal/45">
             Update the resource details,
-            organization, publishing status,
-            and attached media.
+            organization, publishing
+            status, and attached media.
           </p>
         </div>
       </header>
@@ -794,8 +1032,10 @@ export default function EditResourcePage() {
           className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
           <div className="space-y-8">
+            {/* ---------------------------------------------------------------- */}
+            {/* Basic Information                                                */}
+            {/* ---------------------------------------------------------------- */}
 
-            {/* Basic Information */}
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
                 eyebrow="Basic Information"
@@ -809,19 +1049,12 @@ export default function EditResourcePage() {
                 >
                   <input
                     value={title}
-                    onChange={(event) => {
-                      setTitle(
+                    onChange={(event) =>
+                      handleTitleChange(
                         event.target.value,
-                      );
-
-                      if (!slug.trim()) {
-                        setSlug(
-                          slugify(
-                            event.target.value,
-                          ),
-                        );
-                      }
-                    }}
+                      )
+                    }
+                    placeholder="Walking in Purpose"
                     className="input"
                     required
                   />
@@ -830,17 +1063,16 @@ export default function EditResourcePage() {
                 <Field
                   label="Slug"
                   required
-                  hint="Used in the public resource URL."
+                  hint="Used in the public resource URL. Changing this may change the public URL."
                 >
                   <input
                     value={slug}
                     onChange={(event) =>
-                      setSlug(
-                        slugify(
-                          event.target.value,
-                        ),
+                      handleSlugChange(
+                        event.target.value,
                       )
                     }
+                    placeholder="walking-in-purpose"
                     className="input"
                     required
                   />
@@ -883,9 +1115,11 @@ export default function EditResourcePage() {
                       value={speaker}
                       onChange={(event) =>
                         setSpeaker(
-                          event.target.value,
+                          event.target
+                            .value,
                         )
                       }
+                      placeholder="Pastor Olawale Smith"
                       className="input"
                     />
                   </Field>
@@ -899,12 +1133,16 @@ export default function EditResourcePage() {
                         event.target.value,
                       )
                     }
+                    placeholder="Brief description of this resource..."
                     rows={5}
                     className="input resize-y"
                   />
                 </Field>
 
-                <Field label="Article / Resource Content">
+                <Field
+                  label="Article / Resource Content"
+                  hint="For articles and written resources, write the content here."
+                >
                   <textarea
                     value={content}
                     onChange={(event) =>
@@ -912,6 +1150,7 @@ export default function EditResourcePage() {
                         event.target.value,
                       )
                     }
+                    placeholder="Write the resource content here..."
                     rows={14}
                     className="input resize-y"
                   />
@@ -919,7 +1158,10 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {/* Categories */}
+            {/* ---------------------------------------------------------------- */}
+            {/* Categories                                                        */}
+            {/* ---------------------------------------------------------------- */}
+
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
                 eyebrow="Organization"
@@ -929,15 +1171,33 @@ export default function EditResourcePage() {
 
               <div className="p-6">
                 {categoriesLoading ? (
-                  <Loader2 className="animate-spin text-bronze" />
+                  <div className="flex items-center gap-3 py-6 text-sm text-charcoal/40">
+                    <Loader2
+                      size={16}
+                      className="animate-spin"
+                    />
+
+                    Loading categories...
+                  </div>
                 ) : categoriesError ? (
-                  <p className="text-sm text-red-600">
-                    {categoriesError}
-                  </p>
-                ) : categories.length === 0 ? (
+                  <div className="border border-red-500/15 bg-red-500/[0.03] p-4">
+                    <p className="text-sm text-red-600">
+                      {categoriesError}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={loadCategories}
+                      className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : categories.length ===
+                  0 ? (
                   <p className="border border-dashed border-charcoal/10 p-8 text-center text-sm text-charcoal/45">
-                    No categories have been
-                    created yet.
+                    No categories have
+                    been created yet.
                   </p>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -950,14 +1210,16 @@ export default function EditResourcePage() {
 
                         return (
                           <button
+                            key={
+                              category.id
+                            }
                             type="button"
-                            key={category.id}
                             onClick={() =>
                               toggleCategory(
                                 category.id,
                               )
                             }
-                            className={`flex items-start gap-3 border p-4 text-left ${
+                            className={`flex items-start gap-3 border p-4 text-left transition-all ${
                               selected
                                 ? "border-bronze bg-bronze/[0.06]"
                                 : "border-charcoal/10 hover:border-bronze/40"
@@ -967,27 +1229,42 @@ export default function EditResourcePage() {
                               className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border ${
                                 selected
                                   ? "border-bronze bg-bronze text-ivory"
-                                  : "border-charcoal/20"
+                                  : "border-charcoal/20 bg-white"
                               }`}
                             >
                               {selected && (
-                                <Check size={11} />
+                                <Check
+                                  size={
+                                    11
+                                  }
+                                  strokeWidth={
+                                    2.5
+                                  }
+                                />
                               )}
                             </span>
 
-                            <span>
+                            <span className="min-w-0">
                               <span className="block text-xs font-medium">
                                 {
                                   category.name
                                 }
                               </span>
 
-                              <span className="mt-1 block text-[10px] text-charcoal/35">
+                              <span className="mt-1 block truncate text-[10px] text-charcoal/35">
                                 /
                                 {
                                   category.slug
                                 }
                               </span>
+
+                              {category.description && (
+                                <span className="mt-2 block line-clamp-2 text-[11px] leading-5 text-charcoal/40">
+                                  {
+                                    category.description
+                                  }
+                                </span>
+                              )}
                             </span>
                           </button>
                         );
@@ -1012,7 +1289,10 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {/* Media */}
+            {/* ---------------------------------------------------------------- */}
+            {/* Media                                                             */}
+            {/* ---------------------------------------------------------------- */}
+
             <section className="border border-charcoal/10 bg-white">
               <div className="flex items-center justify-between border-b border-charcoal/10 px-6 py-5">
                 <div>
@@ -1025,19 +1305,19 @@ export default function EditResourcePage() {
                   </h2>
 
                   <p className="mt-1 text-xs text-charcoal/40">
-                    Upload device files
-                    directly to Cloudinary
-                    before saving, or attach
-                    YouTube/external media.
+                    Upload files from your
+                    device, or attach
+                    YouTube and external
+                    media.
                   </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={addMedia}
-                  className="inline-flex items-center gap-2 border border-charcoal/10 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] hover:border-bronze hover:text-bronze"
+                  className="inline-flex items-center gap-2 border border-charcoal/10 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors hover:border-bronze hover:text-bronze"
                 >
-                  <Plus size={14} />
+                  <Files size={14} />
                   Add Media
                 </button>
               </div>
@@ -1045,8 +1325,8 @@ export default function EditResourcePage() {
               <div className="p-6">
                 {media.length === 0 ? (
                   <div className="border border-dashed border-charcoal/10 px-6 py-12 text-center">
-                    <Video
-                      size={24}
+                    <Files
+                      size={26}
                       className="mx-auto text-charcoal/20"
                     />
 
@@ -1058,7 +1338,7 @@ export default function EditResourcePage() {
                     <button
                       type="button"
                       onClick={addMedia}
-                      className="mt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze"
+                      className="mt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze hover:underline"
                     >
                       Add your first media
                     </button>
@@ -1074,9 +1354,18 @@ export default function EditResourcePage() {
                           }
                           item={item}
                           index={index}
-                          onUpdate={(
-                            patch,
-                          ) =>
+                          fileInput={(element) => {
+                            fileInputs.current[
+                              index
+                            ] = element;
+                          }}
+                          onFile={(file) =>
+                            handleFileUpload(
+                              index,
+                              file,
+                            )
+                          }
+                          onUpdate={(patch) =>
                             updateMedia(
                               index,
                               patch,
@@ -1087,17 +1376,6 @@ export default function EditResourcePage() {
                               index,
                             )
                           }
-                          onFile={(file) =>
-                            handleFileUpload(
-                              index,
-                              file,
-                            )
-                          }
-                          fileInput={(element) => {
-                            fileInputs.current[
-                              index
-                            ] = element;
-                          }}
                         />
                       ),
                     )}
@@ -1107,7 +1385,10 @@ export default function EditResourcePage() {
             </section>
           </div>
 
-          {/* Sidebar */}
+          {/* ------------------------------------------------------------------ */}
+          {/* Sidebar                                                            */}
+          {/* ------------------------------------------------------------------ */}
+
           <aside className="space-y-6">
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
@@ -1132,6 +1413,36 @@ export default function EditResourcePage() {
               </div>
             </section>
 
+            {selectedCategoryIds.length >
+              0 && (
+              <section className="border border-charcoal/10 bg-white p-6">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Organization
+                </p>
+
+                <h2 className="mt-2 text-sm font-medium">
+                  Selected categories
+                </h2>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {categories
+                    .filter((category) =>
+                      selectedCategoryIds.includes(
+                        category.id,
+                      ),
+                    )
+                    .map((category) => (
+                      <span
+                        key={category.id}
+                        className="inline-flex items-center gap-1.5 bg-bronze/10 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze"
+                      >
+                        {category.name}
+                      </span>
+                    ))}
+                </div>
+              </section>
+            )}
+
             {error && (
               <div className="border border-red-500/15 bg-red-500/[0.03] p-5 text-sm leading-6 text-red-600">
                 {error}
@@ -1141,10 +1452,11 @@ export default function EditResourcePage() {
             <section className="border border-charcoal/10 bg-white p-6">
               <button
                 type="button"
-                onClick={() =>
-                  setShowPreview(true)
-                }
-                className="flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] hover:border-bronze hover:text-bronze"
+                onClick={() => {
+                  setError("");
+                  setShowPreview(true);
+                }}
+                className="flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors hover:border-bronze hover:text-bronze"
               >
                 <Eye size={15} />
                 Preview Resource
@@ -1159,7 +1471,7 @@ export default function EditResourcePage() {
                       item.uploading,
                   )
                 }
-                className="mt-3 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory hover:bg-bronze disabled:opacity-50"
+                className="group mt-3 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? (
                   <>
@@ -1173,8 +1485,10 @@ export default function EditResourcePage() {
                   <>
                     <Check size={15} />
                     Save Changes
+
                     <ArrowUpRight
                       size={14}
+                      className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
                     />
                   </>
                 )}
@@ -1182,7 +1496,7 @@ export default function EditResourcePage() {
 
               <Link
                 href="/admin/dashboard/resources"
-                className="mt-3 flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/55"
+                className="mt-3 flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/55 transition-colors hover:border-charcoal/20 hover:text-charcoal"
               >
                 <X size={14} />
                 Cancel
@@ -1191,6 +1505,10 @@ export default function EditResourcePage() {
           </aside>
         </form>
       </div>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* Preview                                                               */}
+      {/* -------------------------------------------------------------------- */}
 
       {showPreview && (
         <PreviewDialog
@@ -1206,6 +1524,10 @@ export default function EditResourcePage() {
         />
       )}
 
+      {/* -------------------------------------------------------------------- */}
+      {/* Success                                                               */}
+      {/* -------------------------------------------------------------------- */}
+
       {showSuccess && (
         <SuccessDialog
           onContinue={() =>
@@ -1219,9 +1541,9 @@ export default function EditResourcePage() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Media Editor                                                               */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function MediaEditor({
   item,
@@ -1253,8 +1575,22 @@ function MediaEditor({
       <Video size={16} />
     );
 
+  const youtubeEmbed =
+    item.provider === "YOUTUBE"
+      ? getYouTubeEmbedUrl(
+          item.url,
+          item.externalId,
+        )
+      : null;
+
+  const source =
+    item.url ||
+    item.localPreviewUrl;
+
   return (
     <div className="border border-charcoal/10 p-5">
+      {/* Header -------------------------------------------------------------- */}
+
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center bg-bronze/10 text-bronze">
@@ -1276,11 +1612,16 @@ function MediaEditor({
         <button
           type="button"
           onClick={onRemove}
-          className="flex h-8 w-8 items-center justify-center text-charcoal/30 hover:bg-red-50 hover:text-red-500"
+          className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
+          aria-label={`Remove media ${
+            index + 1
+          }`}
         >
           <Trash2 size={15} />
         </button>
       </div>
+
+      {/* Type / Provider ----------------------------------------------------- */}
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Media Type">
@@ -1314,20 +1655,24 @@ function MediaEditor({
         <Field label="Provider">
           <select
             value={item.provider}
-            onChange={(event) =>
-              onUpdate({
-                provider:
-                  event.target
-                    .value as MediaProvider,
+            onChange={(event) => {
+              const provider =
+                event.target
+                  .value as MediaProvider;
 
+              /*
+               * Switching away from YouTube
+               * removes the YouTube-only ID.
+               */
+              onUpdate({
+                provider,
                 externalId:
-                  event.target
-                    .value ===
+                  provider ===
                   "YOUTUBE"
                     ? item.externalId
                     : "",
-              })
-            }
+              });
+            }}
             className="input"
           >
             {mediaProviders.map(
@@ -1348,6 +1693,8 @@ function MediaEditor({
         </Field>
       </div>
 
+      {/* Title ---------------------------------------------------------------- */}
+
       <div className="mt-5">
         <Field label="Media Title">
           <input
@@ -1358,79 +1705,111 @@ function MediaEditor({
                   event.target.value,
               })
             }
-            className="input"
             placeholder="Walking in Purpose — Full Sermon"
+            className="input"
           />
         </Field>
       </div>
 
-      {/* Device Upload */}
-      <div className="mt-5 border border-dashed border-bronze/30 bg-bronze/[0.03] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
-              Device Upload
-            </p>
+      {/* Device upload -------------------------------------------------------- */}
 
-            <p className="mt-1 text-[11px] leading-5 text-charcoal/40">
-              Upload immediately to
-              Cloudinary. Saving the
-              resource is separate.
-            </p>
+      {item.provider ===
+        "CLOUDINARY" && (
+        <div className="mt-5 border border-dashed border-bronze/30 bg-bronze/[0.03] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
+                Device Upload
+              </p>
+
+              <p className="mt-1 text-[11px] leading-5 text-charcoal/40">
+                Upload a new file to
+                Cloudinary. The upload
+                happens before the resource
+                changes are saved.
+              </p>
+            </div>
+
+            <input
+              data-media-upload={index}
+              ref={fileInput}
+              type="file"
+              className="hidden"
+              accept="audio/*,image/*,application/pdf"
+              onChange={(
+                event: ChangeEvent<HTMLInputElement>,
+              ) => {
+                onFile(
+                  event.target.files?.[0],
+                );
+
+                event.currentTarget.value =
+                  "";
+              }}
+            />
+
+            <button
+              type="button"
+              disabled={item.uploading}
+              onClick={() =>
+                document
+                  .querySelector<HTMLInputElement>(
+                    `input[data-media-upload="${index}"]`,
+                  )
+                  ?.click()
+              }
+              className="inline-flex items-center gap-2 bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Upload size={14} />
+
+              {item.uploading
+                ? "Uploading..."
+                : "Choose File"}
+            </button>
           </div>
 
-          <input
-            data-media-upload={index}
-            ref={fileInput}
-            type="file"
-            className="hidden"
-            accept="audio/*,video/*,image/*,application/pdf"
-            onChange={(event) => {
-              onFile(
-                event.target.files?.[0],
-              );
+          {item.fileName && (
+            <div className="mt-3 flex items-center justify-between gap-4">
+              <p className="truncate text-xs text-charcoal/55">
+                {item.fileName}
+              </p>
 
-              event.currentTarget.value =
-                "";
-            }}
-          />
-
-          <button
-            type="button"
-            disabled={item.uploading}
-            onClick={() =>
-              document
-                .querySelector<HTMLInputElement>(
-                  `input[data-media-upload="${index}"]`,
-                )
-                ?.click()
-            }
-            className="inline-flex items-center gap-2 bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory disabled:opacity-50"
-          >
-            <Upload size={14} />
-
-            {item.uploading
-              ? "Uploading..."
-              : "Choose File"}
-          </button>
-        </div>
-
-        {item.fileName && (
-          <p className="mt-3 truncate text-xs text-charcoal/55">
-            {item.fileName}
-          </p>
-        )}
-
-        {item.url &&
-          item.provider ===
-            "CLOUDINARY" && (
-            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-green-700">
-              Uploaded to Cloudinary
-            </p>
+              {item.fileSize !==
+                undefined && (
+                <span className="shrink-0 text-[10px] uppercase tracking-[0.1em] text-charcoal/30">
+                  {formatFileSize(
+                    item.fileSize,
+                  )}
+                </span>
+              )}
+            </div>
           )}
-      </div>
 
-      {/* External / YouTube */}
+          {item.uploading && (
+            <div className="mt-4">
+              <div className="h-1 overflow-hidden bg-charcoal/5">
+                <div className="h-full w-1/2 animate-pulse bg-bronze" />
+              </div>
+
+              <p className="mt-2 text-[10px] text-charcoal/35">
+                Uploading media to
+                Cloudinary...
+              </p>
+            </div>
+          )}
+
+          {!item.uploading &&
+            item.url && (
+              <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.1em] text-green-700">
+                Media uploaded
+                successfully
+              </p>
+            )}
+        </div>
+      )}
+
+      {/* External / YouTube -------------------------------------------------- */}
+
       {item.provider !==
         "CLOUDINARY" && (
         <>
@@ -1449,8 +1828,9 @@ function MediaEditor({
                 value={item.url}
                 onChange={(event) =>
                   onUpdate({
-                    url: event.target
-                      .value,
+                    url:
+                      event.target
+                        .value,
                   })
                 }
                 placeholder={
@@ -1491,51 +1871,351 @@ function MediaEditor({
         </>
       )}
 
-      {/* Cloudinary Preview */}
-      {item.provider ===
-        "CLOUDINARY" &&
-        item.url && (
-          <div className="mt-4 overflow-hidden border border-charcoal/10 bg-black">
-            {item.type ===
-              "IMAGE" ? (
-              <img
-                src={item.url}
-                alt={
+      {/* Existing/new media preview ----------------------------------------- */}
+
+      {(source ||
+        youtubeEmbed) && (
+        <div className="mt-5 overflow-hidden border border-charcoal/10 bg-black">
+          {item.provider ===
+          "YOUTUBE" ? (
+            youtubeEmbed ? (
+              <YouTubePlayer
+                src={youtubeEmbed}
+                title={
                   item.title ||
-                  "Uploaded media"
+                  "YouTube media"
                 }
-                className="max-h-72 w-full object-contain"
-              />
-            ) : item.type ===
-              "VIDEO" ? (
-              <video
-                controls
-                preload="metadata"
-                className="max-h-72 w-full"
-                src={item.url}
-              />
-            ) : item.type ===
-              "AUDIO" ? (
-              <audio
-                controls
-                className="w-full p-4"
-                src={item.url}
               />
             ) : (
-              <div className="p-6 text-center text-sm text-white/70">
-                PDF uploaded and
-                ready.
+              <div className="p-5 text-sm text-white/50">
+                Enter a valid YouTube
+                URL or video ID to
+                preview this media.
               </div>
-            )}
-          </div>
-        )}
+            )
+          ) : (
+            <MediaVisualization
+              media={item}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Media Visualization                                                        */
+/* ========================================================================== */
+
+function MediaVisualization({
+  media,
+}: {
+  media: MediaItem;
+}) {
+  const source =
+    media.url ||
+    media.localPreviewUrl;
+
+  if (!source) {
+    return null;
+  }
+
+  if (media.type === "IMAGE") {
+    return (
+      <div className="flex max-h-80 items-center justify-center bg-charcoal/5 p-3">
+        <img
+          src={source}
+          alt={
+            media.title ||
+            media.fileName ||
+            "Uploaded image"
+          }
+          className="max-h-72 w-full object-contain"
+        />
+      </div>
+    );
+  }
+
+  if (media.type === "PDF") {
+    return (
+      <div className="h-[420px] bg-white">
+        <iframe
+          src={source}
+          title={
+            media.title ||
+            "PDF preview"
+          }
+          className="h-full w-full"
+        />
+      </div>
+    );
+  }
+
+  if (media.type === "AUDIO") {
+    return (
+      <div className="bg-charcoal p-5">
+        <CustomAudioPlayer
+          src={source}
+          title={
+            media.title ||
+            media.fileName ||
+            "Audio"
+          }
+        />
+      </div>
+    );
+  }
+
+  return (
+    <video
+      controls
+      preload="metadata"
+      className="max-h-[420px] w-full bg-black"
+      src={source}
+    />
+  );
+}
+
+/* ========================================================================== */
+/* Custom Audio Player                                                        */
+/* ========================================================================== */
+
+function CustomAudioPlayer({
+  src,
+  title,
+}: {
+  src: string;
+  title: string;
+}) {
+  const audioRef =
+    useRef<HTMLAudioElement | null>(
+      null,
+    );
+
+  const [playing, setPlaying] =
+    useState(false);
+
+  const [currentTime, setCurrentTime] =
+    useState(0);
+
+  const [duration, setDuration] =
+    useState(0);
+
+  const [muted, setMuted] =
+    useState(false);
+
+  function togglePlay() {
+    const audio =
+      audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    if (audio.paused) {
+      void audio.play();
+    } else {
+      audio.pause();
+    }
+  }
+
+  function seek(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const audio =
+      audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    const value =
+      Number(event.target.value);
+
+    audio.currentTime = value;
+    setCurrentTime(value);
+  }
+
+  function toggleMute() {
+    const audio =
+      audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    audio.muted = !audio.muted;
+    setMuted(audio.muted);
+  }
+
+  function handleLoadedMetadata() {
+    const audio =
+      audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    setDuration(
+      Number.isFinite(audio.duration)
+        ? audio.duration
+        : 0,
+    );
+  }
+
+  return (
+    <div className="text-white">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={
+          handleLoadedMetadata
+        }
+        onTimeUpdate={() => {
+          if (audioRef.current) {
+            setCurrentTime(
+              audioRef.current
+                .currentTime,
+            );
+          }
+        }}
+        onPlay={() =>
+          setPlaying(true)
+        }
+        onPause={() =>
+          setPlaying(false)
+        }
+        onEnded={() =>
+          setPlaying(false)
+        }
+      />
+
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-charcoal transition hover:bg-bronze hover:text-white"
+          aria-label={
+            playing
+              ? "Pause audio"
+              : "Play audio"
+          }
+        >
+          {playing ? (
+            <Pause
+              size={17}
+              fill="currentColor"
+            />
+          ) : (
+            <Play
+              size={17}
+              fill="currentColor"
+              className="ml-0.5"
+            />
+          )}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium">
+            {title}
+          </p>
+
+          <div className="mt-2">
+            <input
+              type="range"
+              min="0"
+              max={duration || 0}
+              step="0.1"
+              value={Math.min(
+                currentTime,
+                duration || 0,
+              )}
+              onChange={seek}
+              className="w-full accent-[#9b6a43]"
+            />
+          </div>
+
+          <div className="mt-1 flex justify-between text-[10px] text-white/40">
+            <span>
+              {formatDuration(
+                currentTime,
+              )}
+            </span>
+
+            <span>
+              {formatDuration(
+                duration,
+              )}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={toggleMute}
+          className="shrink-0 text-white/60 hover:text-white"
+          aria-label={
+            muted
+              ? "Unmute audio"
+              : "Mute audio"
+          }
+        >
+          {muted ? (
+            <VolumeX size={17} />
+          ) : (
+            <Volume2 size={17} />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ========================================================================== */
+/* YouTube Player                                                             */
+/* ========================================================================== */
+
+function YouTubePlayer({
+  src,
+  title,
+}: {
+  src: string;
+  title: string;
+}) {
+  return (
+    <div className="bg-black">
+      <div className="relative aspect-video w-full">
+        <iframe
+          src={src}
+          title={title}
+          className="absolute inset-0 h-full w-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+
+      <div className="flex items-center justify-between border-t border-white/10 px-4 py-3">
+        <div className="flex items-center gap-2 text-white/60">
+          <Video size={14} />
+
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+            YouTube Preview
+          </span>
+        </div>
+
+        <span className="truncate text-[10px] text-white/30">
+          {title}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ========================================================================== */
 /* Preview Dialog                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function PreviewDialog({
   title,
@@ -1554,9 +2234,19 @@ function PreviewDialog({
   media: MediaItem[];
   onClose: () => void;
 }) {
+  const attachedMedia =
+    media.filter(
+      (item) =>
+        item.url ||
+        item.localPreviewUrl ||
+        item.externalId,
+    );
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-charcoal/60 p-4 backdrop-blur-sm">
-      <div className="mx-auto my-8 max-w-4xl bg-white shadow-2xl">
+      <div className="mx-auto my-8 max-w-5xl overflow-hidden bg-white shadow-2xl">
+        {/* Header ------------------------------------------------------------ */}
+
         <div className="flex items-center justify-between border-b border-charcoal/10 px-6 py-5">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
@@ -1571,11 +2261,14 @@ function PreviewDialog({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center border border-charcoal/10"
+            className="flex h-9 w-9 items-center justify-center border border-charcoal/10 transition-colors hover:border-bronze hover:text-bronze"
+            aria-label="Close preview"
           >
             <X size={16} />
           </button>
         </div>
+
+        {/* Content ----------------------------------------------------------- */}
 
         <div className="p-6 sm:p-10">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze">
@@ -1605,20 +2298,30 @@ function PreviewDialog({
             </div>
           )}
 
-          {media.filter(
-            (item) => item.url,
-          ).length > 0 && (
-            <div className="mt-10 space-y-6 border-t border-charcoal/10 pt-8">
-              {media
-                .filter(
-                  (item) => item.url,
-                )
-                .map((item, index) => (
+          {attachedMedia.length >
+            0 && (
+            <div className="mt-10 space-y-8 border-t border-charcoal/10 pt-8">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
+                  Media
+                </p>
+
+                <h3 className="mt-2 text-xl font-medium">
+                  Resource media
+                </h3>
+              </div>
+
+              {attachedMedia.map(
+                (item, index) => (
                   <PreviewMedia
-                    key={index}
+                    key={
+                      item.id ??
+                      index
+                    }
                     media={item}
                   />
-                ))}
+                ),
+              )}
             </div>
           )}
         </div>
@@ -1627,9 +2330,9 @@ function PreviewDialog({
   );
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Preview Media                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function PreviewMedia({
   media,
@@ -1640,74 +2343,138 @@ function PreviewMedia({
     media.provider ===
     "YOUTUBE"
   ) {
-    const id =
-      media.externalId ||
-      media.url.match(
-        /(?:v=|youtu\.be\/|shorts\/|embed\/)([^?&/]+)/,
-      )?.[1];
+    const embed =
+      getYouTubeEmbedUrl(
+        media.url,
+        media.externalId,
+      );
 
-    return id ? (
-      <iframe
-        src={`https://www.youtube.com/embed/${id}`}
-        title={
-          media.title ||
-          "YouTube video"
-        }
-        className="aspect-video w-full bg-black"
-        allowFullScreen
-      />
-    ) : null;
+    if (!embed) {
+      return (
+        <div className="border border-red-500/10 bg-red-500/[0.03] p-5 text-sm text-red-600">
+          Invalid YouTube URL or
+          video ID.
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        {media.title && (
+          <p className="mb-3 text-xs font-medium text-charcoal/60">
+            {media.title}
+          </p>
+        )}
+
+        <YouTubePlayer
+          src={embed}
+          title={
+            media.title ||
+            "YouTube media"
+          }
+        />
+      </div>
+    );
   }
 
-  if (media.type === "VIDEO") {
+  const source =
+    media.url ||
+    media.localPreviewUrl;
+
+  if (!source) {
+    return null;
+  }
+
+  if (media.type === "IMAGE") {
     return (
-      <video
-        controls
-        className="max-h-[520px] w-full bg-black"
-        src={media.url}
-      />
+      <div>
+        {media.title && (
+          <p className="mb-3 text-xs font-medium text-charcoal/60">
+            {media.title}
+          </p>
+        )}
+
+        <div className="flex min-h-40 items-center justify-center border border-charcoal/10 bg-charcoal/[0.02] p-4">
+          <img
+            src={source}
+            alt={
+              media.title ||
+              "Resource image"
+            }
+            className="max-h-[620px] w-full object-contain"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (media.type === "PDF") {
+    return (
+      <div>
+        {media.title && (
+          <p className="mb-3 text-xs font-medium text-charcoal/60">
+            {media.title}
+          </p>
+        )}
+
+        <div className="h-[650px] overflow-hidden border border-charcoal/10 bg-charcoal/5">
+          <iframe
+            src={source}
+            title={
+              media.title ||
+              "PDF preview"
+            }
+            className="h-full w-full bg-white"
+          />
+        </div>
+      </div>
     );
   }
 
   if (media.type === "AUDIO") {
     return (
-      <audio
-        controls
-        className="w-full"
-        src={media.url}
-      />
-    );
-  }
+      <div>
+        {media.title && (
+          <p className="mb-3 text-xs font-medium text-charcoal/60">
+            {media.title}
+          </p>
+        )}
 
-  if (media.type === "IMAGE") {
-    return (
-      <img
-        src={media.url}
-        alt={
-          media.title ||
-          "Resource image"
-        }
-        className="max-h-[520px] w-full object-contain"
-      />
+        <div className="bg-charcoal p-6">
+          <CustomAudioPlayer
+            src={source}
+            title={
+              media.title ||
+              media.fileName ||
+              "Audio"
+            }
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <a
-      href={media.url}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-2 text-sm font-semibold text-bronze"
-    >
-      Open PDF
-      <ArrowUpRight size={14} />
-    </a>
+    <div>
+      {media.title && (
+        <p className="mb-3 text-xs font-medium text-charcoal/60">
+          {media.title}
+        </p>
+      )}
+
+      <video
+        controls
+        preload="metadata"
+        className="max-h-[620px] w-full bg-black"
+        src={source}
+      />
+    </div>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Section Header                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Section Head                                                               */
+/* ========================================================================== */
 
 function SectionHead({
   eyebrow,
@@ -1737,9 +2504,9 @@ function SectionHead({
   );
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Field                                                                      */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function Field({
   label,
@@ -1777,9 +2544,9 @@ function Field({
   );
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Toggle                                                                     */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function Toggle({
   label,
@@ -1790,7 +2557,9 @@ function Toggle({
   label: string;
   description: string;
   checked: boolean;
-  onChange: (value: boolean) => void;
+  onChange: (
+    value: boolean,
+  ) => void;
 }) {
   return (
     <button
@@ -1801,14 +2570,14 @@ function Toggle({
       className="flex w-full items-start gap-4 text-left"
     >
       <span
-        className={`relative mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full ${
+        className={`relative mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
           checked
             ? "bg-bronze"
             : "bg-charcoal/15"
         }`}
       >
         <span
-          className={`absolute h-3.5 w-3.5 rounded-full bg-white shadow-sm ${
+          className={`absolute h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
             checked
               ? "translate-x-[17px]"
               : "translate-x-[3px]"
@@ -1829,9 +2598,9 @@ function Toggle({
   );
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Success Dialog                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function SuccessDialog({
   onContinue,
@@ -1842,7 +2611,10 @@ function SuccessDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/40 px-6 backdrop-blur-sm">
       <div className="w-full max-w-md border border-charcoal/10 bg-white p-8 shadow-2xl">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 text-green-600">
-          <Check size={25} />
+          <Check
+            size={25}
+            strokeWidth={2}
+          />
         </div>
 
         <div className="mt-6 text-center">
@@ -1850,7 +2622,7 @@ function SuccessDialog({
             Resource Updated
           </p>
 
-          <h2 className="mt-2 text-2xl font-medium">
+          <h2 className="mt-2 text-2xl font-medium tracking-tight">
             Successfully updated
           </h2>
 
@@ -1864,7 +2636,7 @@ function SuccessDialog({
         <button
           type="button"
           onClick={onContinue}
-          className="mt-8 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory"
+          className="mt-8 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
         >
           Continue to Resources
           <ArrowUpRight size={14} />
