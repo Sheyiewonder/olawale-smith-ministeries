@@ -469,16 +469,10 @@ export default function NewResourcePage() {
 
       URL.revokeObjectURL(localPreviewUrl);
     } catch (err) {
-      /*
-       * Upload failed, so remove the temporary URL.
-       */
-      URL.revokeObjectURL(
-        localPreviewUrl,
-      );
-
+      /* Keep the local preview visible so the user can retry. */
       updateMedia(index, {
         uploading: false,
-        localPreviewUrl: undefined,
+        localPreviewUrl,
         url: "",
         storageKey: undefined,
         duration: undefined,

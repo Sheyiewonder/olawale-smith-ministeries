@@ -641,14 +641,10 @@ export default function EditResourcePage() {
 
       URL.revokeObjectURL(localPreviewUrl);
     } catch (err) {
-      URL.revokeObjectURL(
-        localPreviewUrl,
-      );
-
+      /* Keep the local preview visible so the user can retry. */
       updateMedia(index, {
         uploading: false,
-        localPreviewUrl:
-          undefined,
+        localPreviewUrl,
         url: "",
         storageKey:
           undefined,
