@@ -256,6 +256,12 @@ export default function NewResourcePage() {
     Record<number, HTMLInputElement | null>
   >({});
 
+  const mediaRef = useRef(media);
+
+  useEffect(() => {
+    mediaRef.current = media;
+  }, [media]);
+
   /* ------------------------------------------------------------------------ */
   /* Categories                                                               */
   /* ------------------------------------------------------------------------ */
@@ -295,7 +301,7 @@ export default function NewResourcePage() {
 
   useEffect(() => {
     return () => {
-      media.forEach((item) => {
+      mediaRef.current.forEach((item) => {
         if (item.localPreviewUrl) {
           URL.revokeObjectURL(
             item.localPreviewUrl,
@@ -456,13 +462,12 @@ export default function NewResourcePage() {
           uploaded.data.duration,
 
         /*
-         * Keep localPreviewUrl.
-         *
-         * This means the preview remains available
-         * instantly while the user continues editing.
+         * The permanent URL now owns the preview.
          */
-        localPreviewUrl,
+        localPreviewUrl: undefined,
       });
+
+      URL.revokeObjectURL(localPreviewUrl);
     } catch (err) {
       /*
        * Upload failed, so remove the temporary URL.

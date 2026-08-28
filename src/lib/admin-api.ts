@@ -585,8 +585,8 @@ export async function uploadAdminMedia(
 
   const formData = new FormData();
 
-  formData.append("file", file);
   formData.append("type", type);
+  formData.append("file", file);
 
   const response = await fetch(
     `${API_URL}/admin/media/upload`,

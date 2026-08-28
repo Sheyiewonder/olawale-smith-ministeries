@@ -289,6 +289,12 @@ export default function EditResourcePage() {
     Record<number, HTMLInputElement | null>
   >({});
 
+  const mediaRef = useRef(media);
+
+  useEffect(() => {
+    mediaRef.current = media;
+  }, [media]);
+
   /* ------------------------------------------------------------------------ */
   /* Load resource                                                            */
   /* ------------------------------------------------------------------------ */
@@ -362,7 +368,7 @@ export default function EditResourcePage() {
 
   useEffect(() => {
     return () => {
-      media.forEach((item) => {
+      mediaRef.current.forEach((item) => {
         if (item.localPreviewUrl) {
           URL.revokeObjectURL(
             item.localPreviewUrl,
@@ -629,7 +635,11 @@ export default function EditResourcePage() {
           String(uploaded.data.bytes),
         duration:
           uploaded.data.duration,
+        localPreviewUrl:
+          undefined,
       });
+
+      URL.revokeObjectURL(localPreviewUrl);
     } catch (err) {
       URL.revokeObjectURL(
         localPreviewUrl,
