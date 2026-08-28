@@ -20,6 +20,7 @@ import {
 import {
   FormEvent,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -53,23 +54,13 @@ interface MediaItem {
   storageKey?: string;
   mimeType?: string;
 
-  /**
-   * Prisma schema stores fileSize as String?.
+  /*
+   * Prisma stores fileSize as String.
    */
   fileSize?: string;
 
-  /**
-   * Duration is stored in seconds.
-   */
-  duration?: number;
-
   uploading?: boolean;
   fileName?: string;
-
-  /**
-   * Temporary browser URL used for previewing
-   * a file before/during upload.
-   */
   localPreviewUrl?: string;
 }
 
@@ -131,9 +122,6 @@ function cloudinaryConfig() {
   };
 }
 
-/**
- * Infer our Prisma MediaType from the browser File.
- */
 function inferMediaType(file: File): MediaType {
   if (file.type.startsWith("audio/")) {
     return "AUDIO";
@@ -147,22 +135,9 @@ function inferMediaType(file: File): MediaType {
     return "IMAGE";
   }
 
-  if (file.type.startsWith("video/")) {
-    return "VIDEO";
-  }
-
-  throw new Error(
-    "Unsupported file type. Please upload an audio, video, image, or PDF file.",
-  );
+  return "VIDEO";
 }
 
-/**
- * Upload a file directly to Cloudinary.
- *
- * IMPORTANT:
- * This happens immediately when the admin chooses
- * a file. It does NOT wait for Save Changes.
- */
 async function uploadToCloudinary(file: File) {
   const {
     cloudName,
@@ -172,11 +147,7 @@ async function uploadToCloudinary(file: File) {
   const form = new FormData();
 
   form.append("file", file);
-  form.append(
-    "upload_preset",
-    uploadPreset,
-  );
-
+  form.append("upload_preset", uploadPreset);
   form.append(
     "folder",
     "olawale-smith-ministries/resources",
@@ -192,10 +163,7 @@ async function uploadToCloudinary(file: File) {
 
   const payload = await response.json();
 
-  if (
-    !response.ok ||
-    !payload.secure_url
-  ) {
+  if (!response.ok || !payload.secure_url) {
     throw new Error(
       payload.error?.message ||
         "Cloudinary upload failed.",
@@ -206,9 +174,6 @@ async function uploadToCloudinary(file: File) {
     secure_url: string;
     public_id?: string;
     bytes?: number;
-    duration?: number;
-    resource_type?: string;
-    format?: string;
   };
 }
 
@@ -286,6 +251,11 @@ export default function EditResourcePage() {
   const [showSuccess, setShowSuccess] =
     useState(false);
 
+  const fileInputs =
+    useRef<Record<number, HTMLInputElement | null>>(
+      {},
+    );
+
   /* ------------------------------------------------------------------------ */
   /* Load Resource                                                            */
   /* ------------------------------------------------------------------------ */
@@ -358,14 +328,10 @@ export default function EditResourcePage() {
   ) {
     setTitle(resource.title ?? "");
     setSlug(resource.slug ?? "");
-
     setDescription(
       resource.description ?? "",
     );
-
-    setContent(
-      resource.content ?? "",
-    );
+    setContent(resource.content ?? "");
 
     setType(
       resource.type ?? "SERMON",
@@ -398,6 +364,12 @@ export default function EditResourcePage() {
         ),
     );
 
+    /*
+     * IMPORTANT:
+     *
+     * fileSize comes from Prisma as a String.
+     * We therefore preserve it as a string.
+     */
     setMedia(
       (resource.media ?? []).map(
         (mediaItem) => ({
@@ -428,12 +400,6 @@ export default function EditResourcePage() {
           fileSize:
             mediaItem.fileSize ??
             undefined,
-
-          duration:
-            mediaItem.duration ??
-            undefined,
-
-          uploading: false,
         }),
       ),
     );
@@ -492,20 +458,12 @@ export default function EditResourcePage() {
   function removeMedia(
     index: number,
   ) {
-    setMedia((current) => {
-      const item = current[index];
-
-      if (item?.localPreviewUrl) {
-        URL.revokeObjectURL(
-          item.localPreviewUrl,
-        );
-      }
-
-      return current.filter(
+    setMedia((current) =>
+      current.filter(
         (_, itemIndex) =>
           itemIndex !== index,
-      );
-    });
+      ),
+    );
   }
 
   /* ------------------------------------------------------------------------ */
@@ -520,122 +478,36 @@ export default function EditResourcePage() {
       return;
     }
 
-    setError("");
-
-    let mediaType: MediaType;
-
-    try {
-      mediaType =
-        inferMediaType(file);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Unsupported file type.",
-      );
-      return;
-    }
+    const mediaType =
+      inferMediaType(file);
 
     const localPreviewUrl =
       URL.createObjectURL(file);
 
-    /*
-     * Clear any previous temporary preview.
-     */
-    setMedia((current) =>
-      current.map((item, itemIndex) => {
-        if (itemIndex !== index) {
-          return item;
-        }
-
-        if (item.localPreviewUrl) {
-          URL.revokeObjectURL(
-            item.localPreviewUrl,
-          );
-        }
-
-        return {
-          ...item,
-
-          type: mediaType,
-          provider: "CLOUDINARY",
-
-          uploading: true,
-
-          fileName: file.name,
-
-          localPreviewUrl,
-
-          url: "",
-          externalId: "",
-          storageKey: undefined,
-
-          mimeType:
-            file.type || undefined,
-
-          fileSize:
-            String(file.size),
-        };
-      }),
-    );
+    updateMedia(index, {
+      type: mediaType,
+      provider: "CLOUDINARY",
+      uploading: true,
+      fileName: file.name,
+      localPreviewUrl,
+      url: "",
+      externalId: "",
+    });
 
     try {
       const payload =
         await uploadToCloudinary(file);
 
-      /*
-       * IMPORTANT:
-       *
-       * The upload is now complete.
-       * We keep the Cloudinary URL and
-       * public_id in the form state.
-       *
-       * The resource itself is still NOT
-       * saved until Save Changes is clicked.
-       */
       updateMedia(index, {
         provider: "CLOUDINARY",
-
         type: mediaType,
-
         uploading: false,
-
         url: payload.secure_url,
-
-        storageKey:
-          payload.public_id,
-
-        mimeType:
-          file.type ||
-          undefined,
-
-        fileSize:
-          String(
-            payload.bytes ??
-              file.size,
-          ),
-
-        duration:
-          payload.duration
-            ? Math.round(
-                payload.duration,
-              )
-            : undefined,
+        storageKey: payload.public_id,
+        mimeType: file.type,
+        fileSize: String(payload.bytes ?? file.size),
       });
 
-      /*
-       * We can safely remove the temporary
-       * browser preview after Cloudinary
-       * has returned its permanent URL.
-       */
-      URL.revokeObjectURL(
-        localPreviewUrl,
-      );
-
-      updateMedia(index, {
-        localPreviewUrl:
-          undefined,
-      });
     } catch (e) {
       URL.revokeObjectURL(
         localPreviewUrl,
@@ -643,13 +515,8 @@ export default function EditResourcePage() {
 
       updateMedia(index, {
         uploading: false,
-        localPreviewUrl:
-          undefined,
+        localPreviewUrl: undefined,
         url: "",
-        storageKey:
-          undefined,
-        fileSize:
-          undefined,
       });
 
       setError(
@@ -672,10 +539,6 @@ export default function EditResourcePage() {
     ) {
       const item = media[index];
 
-      /*
-       * Do not allow saving while Cloudinary
-       * is still uploading.
-       */
       if (item.uploading) {
         return `Media ${
           index + 1
@@ -683,7 +546,8 @@ export default function EditResourcePage() {
       }
 
       /*
-       * Completely empty media rows are allowed.
+       * Completely empty media rows
+       * are allowed.
        */
       if (
         !item.url.trim() &&
@@ -692,41 +556,16 @@ export default function EditResourcePage() {
         continue;
       }
 
-      /*
-       * Every non-empty media item must
-       * have a media type.
-       */
       if (!item.type) {
         return `Media ${
           index + 1
         }: Media type is required.`;
       }
 
-      /*
-       * YouTube can use externalId instead
-       * of a URL.
-       */
       if (
-        item.provider ===
-        "YOUTUBE"
+        item.provider !== "YOUTUBE" &&
+        !item.url.trim()
       ) {
-        if (
-          !item.url.trim() &&
-          !item.externalId.trim()
-        ) {
-          return `Media ${
-            index + 1
-          }: Please provide a YouTube URL or video ID.`;
-        }
-
-        continue;
-      }
-
-      /*
-       * Cloudinary and external media
-       * require a URL.
-       */
-      if (!item.url.trim()) {
         return `Media ${
           index + 1
         }: Please provide a media URL.`;
@@ -778,12 +617,33 @@ export default function EditResourcePage() {
     try {
       setSaving(true);
 
-      /*
-       * Only send media rows that actually
-       * contain media.
-       */
-      const mediaPayload =
-        media
+      const input: UpdateResourceInput = {
+        title: trimmedTitle,
+
+        slug: trimmedSlug,
+
+        description:
+          description.trim() ||
+          undefined,
+
+        content:
+          content.trim() ||
+          undefined,
+
+        type,
+
+        speaker:
+          speaker.trim() ||
+          undefined,
+
+        featured,
+
+        published,
+
+        categoryIds:
+          selectedCategoryIds,
+
+        media: media
           .filter(
             (item) =>
               item.url.trim() ||
@@ -814,47 +674,11 @@ export default function EditResourcePage() {
               item.mimeType,
 
             /*
-             * IMPORTANT:
-             *
-             * Do NOT convert this to Number().
-             *
-             * Your Prisma schema defines
-             * MediaAsset.fileSize as String?.
+             * Already a string.
              */
             fileSize:
               item.fileSize,
-
-            duration:
-              item.duration,
-          }));
-
-      const input: UpdateResourceInput = {
-        title: trimmedTitle,
-
-        slug: trimmedSlug,
-
-        description:
-          description.trim() ||
-          undefined,
-
-        content:
-          content.trim() ||
-          undefined,
-
-        type,
-
-        speaker:
-          speaker.trim() ||
-          undefined,
-
-        featured,
-
-        published,
-
-        categoryIds:
-          selectedCategoryIds,
-
-        media: mediaPayload,
+          })),
       };
 
       await updateResource(
@@ -886,7 +710,6 @@ export default function EditResourcePage() {
             size={18}
             className="animate-spin text-bronze"
           />
-
           Loading resource...
         </div>
       </main>
@@ -915,7 +738,6 @@ export default function EditResourcePage() {
 
           <div className="mt-6 flex gap-3">
             <button
-              type="button"
               onClick={loadResource}
               className="bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory"
             >
@@ -972,6 +794,7 @@ export default function EditResourcePage() {
           className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
           <div className="space-y-8">
+
             {/* Basic Information */}
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
@@ -987,14 +810,15 @@ export default function EditResourcePage() {
                   <input
                     value={title}
                     onChange={(event) => {
-                      const value =
-                        event.target.value;
-
-                      setTitle(value);
+                      setTitle(
+                        event.target.value,
+                      );
 
                       if (!slug.trim()) {
                         setSlug(
-                          slugify(value),
+                          slugify(
+                            event.target.value,
+                          ),
                         );
                       }
                     }}
@@ -1112,8 +936,8 @@ export default function EditResourcePage() {
                   </p>
                 ) : categories.length === 0 ? (
                   <p className="border border-dashed border-charcoal/10 p-8 text-center text-sm text-charcoal/45">
-                    No categories have
-                    been created yet.
+                    No categories have been
+                    created yet.
                   </p>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1269,6 +1093,11 @@ export default function EditResourcePage() {
                               file,
                             )
                           }
+                          fileInput={(element) => {
+                            fileInputs.current[
+                              index
+                            ] = element;
+                          }}
                         />
                       ),
                     )}
@@ -1400,6 +1229,7 @@ function MediaEditor({
   onUpdate,
   onRemove,
   onFile,
+  fileInput,
 }: {
   item: MediaItem;
   index: number;
@@ -1408,6 +1238,9 @@ function MediaEditor({
   ) => void;
   onRemove: () => void;
   onFile: (file?: File) => void;
+  fileInput: (
+    element: HTMLInputElement | null,
+  ) => void;
 }) {
   const icon =
     item.type === "AUDIO" ? (
@@ -1419,10 +1252,6 @@ function MediaEditor({
     ) : (
       <Video size={16} />
     );
-
-  const previewUrl =
-    item.localPreviewUrl ||
-    item.url;
 
   return (
     <div className="border border-charcoal/10 p-5">
@@ -1485,36 +1314,20 @@ function MediaEditor({
         <Field label="Provider">
           <select
             value={item.provider}
-            onChange={(event) => {
-              const provider =
-                event.target
-                  .value as MediaProvider;
-
+            onChange={(event) =>
               onUpdate({
-                provider,
+                provider:
+                  event.target
+                    .value as MediaProvider,
 
                 externalId:
-                  provider ===
+                  event.target
+                    .value ===
                   "YOUTUBE"
                     ? item.externalId
                     : "",
-
-                /*
-                 * When switching away from
-                 * Cloudinary, don't accidentally
-                 * keep Cloudinary storage data.
-                 */
-                ...(provider !==
-                  "CLOUDINARY" && {
-                  storageKey:
-                    undefined,
-                  mimeType:
-                    undefined,
-                  fileSize:
-                    undefined,
-                }),
-              });
-            }}
+              })
+            }
             className="input"
           >
             {mediaProviders.map(
@@ -1567,10 +1380,11 @@ function MediaEditor({
           </div>
 
           <input
+            data-media-upload={index}
+            ref={fileInput}
             type="file"
             className="hidden"
             accept="audio/*,video/*,image/*,application/pdf"
-            id={`media-upload-${index}`}
             onChange={(event) => {
               onFile(
                 event.target.files?.[0],
@@ -1581,20 +1395,24 @@ function MediaEditor({
             }}
           />
 
-          <label
-            htmlFor={`media-upload-${index}`}
-            className={`inline-flex cursor-pointer items-center gap-2 bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory ${
-              item.uploading
-                ? "pointer-events-none opacity-50"
-                : ""
-            }`}
+          <button
+            type="button"
+            disabled={item.uploading}
+            onClick={() =>
+              document
+                .querySelector<HTMLInputElement>(
+                  `input[data-media-upload="${index}"]`,
+                )
+                ?.click()
+            }
+            className="inline-flex items-center gap-2 bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory disabled:opacity-50"
           >
             <Upload size={14} />
 
             {item.uploading
               ? "Uploading..."
               : "Choose File"}
-          </label>
+          </button>
         </div>
 
         {item.fileName && (
@@ -1603,20 +1421,9 @@ function MediaEditor({
           </p>
         )}
 
-        {item.uploading && (
-          <div className="mt-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-bronze">
-            <Loader2
-              size={13}
-              className="animate-spin"
-            />
-            Uploading to Cloudinary...
-          </div>
-        )}
-
         {item.url &&
           item.provider ===
-            "CLOUDINARY" &&
-          !item.uploading && (
+            "CLOUDINARY" && (
             <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-green-700">
               Uploaded to Cloudinary
             </p>
@@ -1684,45 +1491,44 @@ function MediaEditor({
         </>
       )}
 
-      {/* Media Preview */}
-      {previewUrl && (
-        <div className="mt-4 overflow-hidden border border-charcoal/10 bg-black">
-          {item.type === "IMAGE" ? (
-            <img
-              src={previewUrl}
-              alt={
-                item.title ||
-                "Uploaded media"
-              }
-              className="max-h-72 w-full object-contain"
-            />
-          ) : item.type === "VIDEO" &&
-            item.provider ===
-              "CLOUDINARY" ? (
-            <video
-              controls
-              preload="metadata"
-              className="max-h-72 w-full"
-              src={previewUrl}
-            />
-          ) : item.type === "AUDIO" &&
-            item.provider ===
-              "CLOUDINARY" ? (
-            <audio
-              controls
-              className="w-full p-4"
-              src={previewUrl}
-            />
-          ) : item.type === "PDF" &&
-            item.provider ===
-              "CLOUDINARY" ? (
-            <div className="p-6 text-center text-sm text-white/70">
-              PDF uploaded and
-              ready.
-            </div>
-          ) : null}
-        </div>
-      )}
+      {/* Cloudinary Preview */}
+      {item.provider ===
+        "CLOUDINARY" &&
+        item.url && (
+          <div className="mt-4 overflow-hidden border border-charcoal/10 bg-black">
+            {item.type ===
+              "IMAGE" ? (
+              <img
+                src={item.url}
+                alt={
+                  item.title ||
+                  "Uploaded media"
+                }
+                className="max-h-72 w-full object-contain"
+              />
+            ) : item.type ===
+              "VIDEO" ? (
+              <video
+                controls
+                preload="metadata"
+                className="max-h-72 w-full"
+                src={item.url}
+              />
+            ) : item.type ===
+              "AUDIO" ? (
+              <audio
+                controls
+                className="w-full p-4"
+                src={item.url}
+              />
+            ) : (
+              <div className="p-6 text-center text-sm text-white/70">
+                PDF uploaded and
+                ready.
+              </div>
+            )}
+          </div>
+        )}
     </div>
   );
 }
@@ -1748,13 +1554,6 @@ function PreviewDialog({
   media: MediaItem[];
   onClose: () => void;
 }) {
-  const previewableMedia =
-    media.filter(
-      (item) =>
-        item.url.trim() ||
-        item.externalId.trim(),
-    );
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-charcoal/60 p-4 backdrop-blur-sm">
       <div className="mx-auto my-8 max-w-4xl bg-white shadow-2xl">
@@ -1806,20 +1605,20 @@ function PreviewDialog({
             </div>
           )}
 
-          {previewableMedia.length >
-            0 && (
+          {media.filter(
+            (item) => item.url,
+          ).length > 0 && (
             <div className="mt-10 space-y-6 border-t border-charcoal/10 pt-8">
-              {previewableMedia.map(
-                (item, index) => (
+              {media
+                .filter(
+                  (item) => item.url,
+                )
+                .map((item, index) => (
                   <PreviewMedia
-                    key={
-                      item.id ??
-                      index
-                    }
+                    key={index}
                     media={item}
                   />
-                ),
-              )}
+                ))}
             </div>
           )}
         </div>
@@ -1865,10 +1664,7 @@ function PreviewMedia({
       <video
         controls
         className="max-h-[520px] w-full bg-black"
-        src={
-          media.localPreviewUrl ||
-          media.url
-        }
+        src={media.url}
       />
     );
   }
@@ -1878,10 +1674,7 @@ function PreviewMedia({
       <audio
         controls
         className="w-full"
-        src={
-          media.localPreviewUrl ||
-          media.url
-        }
+        src={media.url}
       />
     );
   }
@@ -1889,10 +1682,7 @@ function PreviewMedia({
   if (media.type === "IMAGE") {
     return (
       <img
-        src={
-          media.localPreviewUrl ||
-          media.url
-        }
+        src={media.url}
         alt={
           media.title ||
           "Resource image"

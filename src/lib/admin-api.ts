@@ -180,7 +180,7 @@ export interface AdminMedia {
    * to avoid integer overflow / BigInt serialization
    * issues in the frontend.
    */
-  fileSize?: number | null;
+  fileSize?: string | null;
 
   duration?: number | null;
 
@@ -227,7 +227,7 @@ export interface UpdateMediaInput {
 
   mimeType?: string | null;
 
-  fileSize?: number | null;
+  fileSize?: string | null;
 
   duration?: number | null;
 }
