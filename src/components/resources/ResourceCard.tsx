@@ -1,6 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import {
+  BookOpen,
+  FileText,
+  Headphones,
+  Mic2,
+  Music2,
+  Video,
+} from "lucide-react";
 import type { Resource } from "@/lib/api";
 import { usePageTheme } from "@/components/theme/ThemeProvider";
 
@@ -17,12 +25,37 @@ const typeLabels: Record<Resource["type"], string> = {
   ARTICLE: "Article",
 };
 
+const typeIcons = {
+  SERMON: Mic2,
+  EBOOK: BookOpen,
+  SONG: Music2,
+  VIDEO: Video,
+  PODCAST: Headphones,
+  ARTICLE: FileText,
+} satisfies Record<Resource["type"], typeof FileText>;
+
 export default function ResourceCard({
   resource,
 }: ResourceCardProps) {
   const { config, theme } = usePageTheme();
 
   const category = resource.categories[0]?.category;
+  const Icon = typeIcons[resource.type];
+  const youtubeMedia = resource.media.find(
+    (media) =>
+      media.provider === "YOUTUBE" &&
+      media.type === "VIDEO",
+  );
+  const youtubeId =
+    youtubeMedia?.externalId ??
+    youtubeMedia?.url?.match(
+      /(?:v=|youtu\.be\/|shorts\/|embed\/)([^?&/]+)/,
+    )?.[1];
+  const thumbnailUrl =
+    resource.thumbnail?.url ||
+    (youtubeId
+      ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`
+      : undefined);
 
   const cardImageFallback =
     theme === "dark"
@@ -51,9 +84,9 @@ export default function ResourceCard({
               : "bg-ivory-muted",
           ].join(" ")}
         >
-          {resource.thumbnail?.url ? (
+          {thumbnailUrl ? (
             <img
-              src={resource.thumbnail.url}
+              src={thumbnailUrl}
               alt={resource.title}
               className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
@@ -65,9 +98,10 @@ export default function ResourceCard({
                 cardImageFallback,
               ].join(" ")}
             >
-              <span className={["eyebrow", config.page.accent].join(" ")}>
-                {typeLabels[resource.type]}
-              </span>
+                <Icon size={48} strokeWidth={1.2} className={config.page.accent} />
+                <span className={["mt-3", "eyebrow", config.page.accent].join(" ")}>
+                  {typeLabels[resource.type]}
+                </span>
             </div>
           )}
 

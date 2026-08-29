@@ -156,6 +156,20 @@ function getYouTubeEmbedUrl(
   return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
 }
 
+function getThumbnailUrl(
+  media: MediaItem[],
+): string | undefined {
+  return media.find(
+    (item) =>
+      item.type === "IMAGE" &&
+      (item.url || item.localPreviewUrl),
+  )?.url || media.find(
+    (item) =>
+      item.type === "IMAGE" &&
+      item.localPreviewUrl,
+  )?.localPreviewUrl;
+}
+
 function formatFileSize(bytes?: string): string {
   if (!bytes) {
     return "";
@@ -598,6 +612,30 @@ export default function NewResourcePage() {
     if (!trimmedSlug) {
       setError(
         "Please enter a resource slug.",
+      );
+      return;
+    }
+
+    const hasYouTubeMedia = media.some(
+      (item) =>
+        item.provider === "YOUTUBE" &&
+        Boolean(
+          getYouTubeId(
+            item.url,
+            item.externalId,
+          ),
+        ),
+    );
+
+    const hasImageMedia = media.some(
+      (item) =>
+        item.type === "IMAGE" &&
+        item.url.trim(),
+    );
+
+    if (!hasYouTubeMedia && !hasImageMedia) {
+      setError(
+        "Please upload an image to use as this resource thumbnail, or add YouTube media.",
       );
       return;
     }
@@ -1046,6 +1084,7 @@ export default function NewResourcePage() {
                           key={index}
                           item={item}
                           index={index}
+                          thumbnailUrl={getThumbnailUrl(media)}
                           fileInput={(element) => {
                             fileInputs.current[
                               index
@@ -1208,6 +1247,7 @@ export default function NewResourcePage() {
 function MediaEditor({
   item,
   index,
+  thumbnailUrl,
   onUpdate,
   onRemove,
   onFile,
@@ -1215,6 +1255,7 @@ function MediaEditor({
 }: {
   item: MediaItem;
   index: number;
+  thumbnailUrl?: string;
   onUpdate: (
     patch: Partial<MediaItem>,
   ) => void;
@@ -1550,6 +1591,7 @@ function MediaEditor({
             localPreviewUrl={
               item.localPreviewUrl
             }
+            thumbnailUrl={thumbnailUrl}
             title={
               item.title ||
               item.fileName ||
@@ -1673,6 +1715,7 @@ function PreviewDialog({
                   <PreviewMedia
                     key={index}
                     media={item}
+                    thumbnailUrl={getThumbnailUrl(media)}
                   />
                 ),
               )}
@@ -1690,8 +1733,10 @@ function PreviewDialog({
 
 function PreviewMedia({
   media,
+  thumbnailUrl,
 }: {
   media: MediaItem;
+  thumbnailUrl?: string;
 }) {
   return (
     <div>
@@ -1706,6 +1751,7 @@ function PreviewMedia({
         localPreviewUrl={
           media.localPreviewUrl
         }
+        thumbnailUrl={thumbnailUrl}
         title={
           media.title ||
           media.fileName ||

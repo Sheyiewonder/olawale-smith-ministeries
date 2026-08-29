@@ -20,6 +20,8 @@ interface ResourceMediaPreviewProps {
    */
   localPreviewUrl?: string | null;
 
+  thumbnailUrl?: string | null;
+
   title?: string;
 }
 
@@ -44,6 +46,7 @@ function isYouTubeUrl(
 export default function ResourceMediaPreview({
   media,
   localPreviewUrl,
+  thumbnailUrl,
   title,
 }: ResourceMediaPreviewProps) {
   if (!media) {
@@ -150,6 +153,7 @@ export default function ResourceMediaPreview({
     return (
       <CustomAudioPlayer
         src={url}
+        thumbnailUrl={thumbnailUrl}
         title={
           media.title ||
           title

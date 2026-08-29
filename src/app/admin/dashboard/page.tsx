@@ -5,7 +5,10 @@ import {
   BookOpen,
   FileText,
   FolderOpen,
+  Headphones,
   LogOut,
+  Mic2,
+  Music2,
   Plus,
   Video,
 } from "lucide-react";
@@ -332,13 +335,53 @@ export default function AdminDashboardPage() {
                 .map((resource) => {
                   const category =
                     resource.categories?.[0]?.category;
+                  const youtube = resource.media?.find(
+                    (media) =>
+                      media.provider === "YOUTUBE" &&
+                      media.type === "VIDEO",
+                  );
+                  const videoId =
+                    youtube?.externalId ??
+                    youtube?.url?.match(
+                      /(?:v=|youtu\.be\/|shorts\/|embed\/)([^?&/]+)/,
+                    )?.[1];
+                  const thumbnailUrl =
+                    resource.thumbnail?.url ||
+                    (videoId
+                      ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+                      : undefined);
+                  const ResourceIcon =
+                    resource.type === "SERMON"
+                      ? Mic2
+                      : resource.type === "EBOOK"
+                        ? BookOpen
+                        : resource.type === "SONG"
+                          ? Music2
+                          : resource.type === "VIDEO"
+                            ? Video
+                            : resource.type === "PODCAST"
+                              ? Headphones
+                              : FileText;
 
                   return (
                     <div
                       key={resource.id}
                       className="flex flex-col gap-4 border-b border-charcoal/10 px-6 py-5 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div>
+                      <div className="flex min-w-0 items-center gap-4">
+                        <div className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden bg-bronze/10 text-bronze">
+                          {thumbnailUrl ? (
+                            <img
+                              src={thumbnailUrl}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <ResourceIcon size={22} />
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
                         <p className="font-medium">
                           {resource.title}
                         </p>
@@ -371,6 +414,7 @@ export default function AdminDashboardPage() {
                               ? "Published"
                               : "Draft"}
                           </span>
+                        </div>
                         </div>
                       </div>
 

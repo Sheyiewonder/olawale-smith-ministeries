@@ -155,6 +155,7 @@ export default async function ResourceDetailPage({
                   <ResourceMedia
                     key={media.id}
                     media={media}
+                    thumbnailUrl={resource.thumbnail?.url}
                   />
                 ))}
               </div>
@@ -228,10 +229,12 @@ interface ResourceMediaProps {
     url?: string | null;
     externalId?: string | null;
   };
+  thumbnailUrl?: string | null;
 }
 
 function ResourceMedia({
   media,
+  thumbnailUrl,
 }: ResourceMediaProps) {
   const title = media.title ?? "Resource";
 
@@ -300,7 +303,18 @@ function ResourceMedia({
     }
 
     return (
-      <div className="rounded-2xl border border-ivory/10 bg-charcoal-soft p-6 sm:p-8">
+      <div
+        className="rounded-2xl border border-ivory/10 bg-charcoal-soft p-6 sm:p-8"
+        style={
+          thumbnailUrl
+            ? {
+                backgroundImage: `linear-gradient(rgba(20, 18, 16, 0.72), rgba(20, 18, 16, 0.88)), url(${thumbnailUrl})`,
+                backgroundPosition: "center",
+                backgroundSize: "cover",
+              }
+            : undefined
+        }
+      >
         <div className="mb-5 flex items-center justify-between gap-4">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ivory/60">
             {title}

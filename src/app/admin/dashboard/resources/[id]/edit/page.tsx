@@ -180,6 +180,20 @@ function formatFileSize(value?: string): string {
   ).toFixed(1)} GB`;
 }
 
+function getThumbnailUrl(
+  media: MediaItem[],
+): string | undefined {
+  return media.find(
+    (item) =>
+      item.type === "IMAGE" &&
+      (item.url || item.localPreviewUrl),
+  )?.url || media.find(
+    (item) =>
+      item.type === "IMAGE" &&
+      item.localPreviewUrl,
+  )?.localPreviewUrl;
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -768,6 +782,30 @@ export default function EditResourcePage() {
       return;
     }
 
+    const hasYouTubeMedia = media.some(
+      (item) =>
+        item.provider === "YOUTUBE" &&
+        Boolean(
+          getYouTubeId(
+            item.url,
+            item.externalId,
+          ),
+        ),
+    );
+
+    const hasImageMedia = media.some(
+      (item) =>
+        item.type === "IMAGE" &&
+        item.url.trim(),
+    );
+
+    if (!hasYouTubeMedia && !hasImageMedia) {
+      setError(
+        "Please upload an image to use as this resource thumbnail, or add YouTube media.",
+      );
+      return;
+    }
+
     const mediaError =
       validateMedia();
 
@@ -1294,6 +1332,7 @@ export default function EditResourcePage() {
                           }
                           item={item}
                           index={index}
+                          thumbnailUrl={getThumbnailUrl(media)}
                           fileInput={(element) => {
                             fileInputs.current[
                               index
@@ -1482,6 +1521,7 @@ export default function EditResourcePage() {
 function MediaEditor({
   item,
   index,
+  thumbnailUrl,
   onUpdate,
   onRemove,
   onFile,
@@ -1489,6 +1529,7 @@ function MediaEditor({
 }: {
   item: MediaItem;
   index: number;
+  thumbnailUrl?: string;
   onUpdate: (
     patch: Partial<MediaItem>,
   ) => void;
@@ -1803,6 +1844,7 @@ function MediaEditor({
             localPreviewUrl={
               item.localPreviewUrl
             }
+            thumbnailUrl={thumbnailUrl}
             title={
               item.title ||
               item.fileName ||
@@ -1921,6 +1963,7 @@ function PreviewDialog({
                       `preview-${index}`
                     }
                     media={item}
+                    thumbnailUrl={getThumbnailUrl(media)}
                   />
                 ),
               )}
@@ -1938,8 +1981,10 @@ function PreviewDialog({
 
 function PreviewMedia({
   media,
+  thumbnailUrl,
 }: {
   media: MediaItem;
+  thumbnailUrl?: string;
 }) {
   return (
     <div>
@@ -1954,6 +1999,7 @@ function PreviewMedia({
         localPreviewUrl={
           media.localPreviewUrl
         }
+        thumbnailUrl={thumbnailUrl}
         title={
           media.title ||
           media.fileName ||

@@ -88,6 +88,30 @@ const typeConfig: Record<
   },
 };
 
+function getResourceThumbnail(
+  resource: AdminResource,
+): string | undefined {
+  if (resource.thumbnail?.url) {
+    return resource.thumbnail.url;
+  }
+
+  const youtube = resource.media?.find(
+    (media) =>
+      media.provider === "YOUTUBE" &&
+      media.type === "VIDEO",
+  );
+
+  const videoId =
+    youtube?.externalId ??
+    youtube?.url?.match(
+      /(?:v=|youtu\.be\/|shorts\/|embed\/)([^?&/]+)/,
+    )?.[1];
+
+  return videoId
+    ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+    : undefined;
+}
+
 export default function AdminResourcesPage() {
   const [resources, setResources] = useState<
     AdminResource[]
@@ -677,6 +701,8 @@ function ResourceTable({
             typeConfig[resource.type];
 
           const Icon = config.icon;
+          const thumbnailUrl =
+            getResourceThumbnail(resource);
 
           return (
             <div
@@ -686,8 +712,16 @@ function ResourceTable({
               {/* Resource */}
               <div className="min-w-0 pr-8">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-bronze/10 text-bronze">
-                    <Icon size={16} />
+                  <div className="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden bg-bronze/10 text-bronze">
+                    {thumbnailUrl ? (
+                      <img
+                        src={thumbnailUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Icon size={20} />
+                    )}
                   </div>
 
                   <div className="min-w-0">

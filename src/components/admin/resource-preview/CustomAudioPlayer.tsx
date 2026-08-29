@@ -11,11 +11,13 @@ import { useEffect, useRef, useState } from "react";
 interface CustomAudioPlayerProps {
   src: string;
   title?: string | null;
+  thumbnailUrl?: string | null;
 }
 
 export default function CustomAudioPlayer({
   src,
   title,
+  thumbnailUrl,
 }: CustomAudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -131,7 +133,18 @@ export default function CustomAudioPlayer({
   };
 
   return (
-    <div className="w-full rounded-2xl border bg-background p-5 shadow-sm">
+    <div
+      className="relative w-full overflow-hidden rounded-2xl border bg-background p-5 shadow-sm"
+      style={
+        thumbnailUrl
+          ? {
+              backgroundImage: `linear-gradient(rgba(20, 18, 16, 0.72), rgba(20, 18, 16, 0.88)), url(${thumbnailUrl})`,
+              backgroundPosition: "center",
+              backgroundSize: "cover",
+            }
+          : undefined
+      }
+    >
       <audio
         ref={audioRef}
         src={src}
