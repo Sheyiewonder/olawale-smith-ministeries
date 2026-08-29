@@ -125,7 +125,7 @@ export default function ResourcesPage() {
             </button>
           </div>
         ) : loading ? (
-          <div className="grid gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 6 }).map((_, index) => (
               <div key={index}>
                 <div className="aspect-[4/3] animate-pulse rounded-2xl bg-charcoal/5" />
@@ -148,7 +148,7 @@ export default function ResourcesPage() {
           </div>
         ) : (
           <>
-            <div className="grid gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
               {resources.map((resource) => (
                 <ResourceCard
                   key={resource.id}

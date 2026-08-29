@@ -1,3 +1,11 @@
+import {
+  BookOpen,
+  FileText,
+  Headphones,
+  Mic2,
+  Music2,
+  Video,
+} from "lucide-react";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -5,6 +13,8 @@ import { notFound } from "next/navigation";
 import PageLayout from "@/components/layout/PageLayout";
 import Section from "@/components/layout/Section";
 import Reveal from "@/components/motion/Reveal";
+import CustomAudioPlayer from "@/components/admin/resource-preview/CustomAudioPlayer";
+import PdfPreview from "@/components/admin/resource-preview/PdfPreview";
 import { getResourceBySlug } from "@/lib/api";
 
 interface ResourceDetailPageProps {
@@ -39,6 +49,18 @@ export default async function ResourceDetailPage({
     resource.categories[0]?.category;
 
   const typeLabel = typeLabels[resource.type];
+  const ResourceIcon =
+    resource.type === "SERMON"
+      ? Mic2
+      : resource.type === "EBOOK"
+        ? BookOpen
+        : resource.type === "SONG"
+          ? Music2
+          : resource.type === "VIDEO"
+            ? Video
+            : resource.type === "PODCAST"
+              ? Headphones
+              : FileText;
 
   const publishedDate = resource.publishedAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -119,49 +141,42 @@ export default async function ResourceDetailPage({
               )}
             </div>
 
-            {/* Thumbnail */}
+            {/* Thumbnail and media */}
             <Reveal delay={0.12}>
-              <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-charcoal/10 bg-ivory-muted">
-                {resource.thumbnail?.url ? (
-                  <img
-                    src={resource.thumbnail.url}
-                    alt={resource.title}
-                    className="h-full w-full object-cover"
-                  />
+              <div className="space-y-5">
+                {resource.media.length > 0 ? (
+                  <div className="space-y-5">
+                    {resource.media.map((media) => (
+                      <ResourceMedia
+                        key={media.id}
+                        media={media}
+                        thumbnailUrl={resource.thumbnail?.url}
+                        fallbackIcon={<ResourceIcon size={92} strokeWidth={0.7} />}
+                      />
+                    ))}
+                  </div>
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-ivory-muted to-charcoal-soft">
-                    <span className="eyebrow text-bronze">
-                      {typeLabel}
-                    </span>
+                  <div className="relative aspect-square overflow-hidden rounded-2xl border border-charcoal/10 bg-ivory-muted">
+                    {resource.thumbnail?.url ? (
+                      <img
+                        src={resource.thumbnail.url}
+                        alt={resource.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-ivory-muted to-charcoal-soft text-bronze">
+                        <ResourceIcon size={72} strokeWidth={0.8} />
+                        <span className="eyebrow text-bronze">
+                          {typeLabel}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </Reveal>
           </div>
         </Section>
-
-        {/* Media */}
-        {resource.media.length > 0 && (
-          <Section theme="dark">
-            <div className="mx-auto w-full max-w-7xl px-6 py-20 sm:py-28 lg:px-8">
-              <Reveal>
-                <p className="eyebrow text-gold">
-                  Resource
-                </p>
-              </Reveal>
-
-              <div className="mt-10 space-y-6">
-                {resource.media.map((media) => (
-                  <ResourceMedia
-                    key={media.id}
-                    media={media}
-                    thumbnailUrl={resource.thumbnail?.url}
-                  />
-                ))}
-              </div>
-            </div>
-          </Section>
-        )}
 
         {/* Article / description content */}
         {resource.type === "ARTICLE" &&
@@ -230,11 +245,13 @@ interface ResourceMediaProps {
     externalId?: string | null;
   };
   thumbnailUrl?: string | null;
+  fallbackIcon?: React.ReactNode;
 }
 
 function ResourceMedia({
   media,
   thumbnailUrl,
+  fallbackIcon,
 }: ResourceMediaProps) {
   const title = media.title ?? "Resource";
 
@@ -257,8 +274,8 @@ function ResourceMedia({
     }
 
     return (
-      <div className="overflow-hidden rounded-2xl border border-ivory/10 bg-black">
-        <div className="aspect-video w-full">
+      <div className="aspect-square overflow-hidden rounded-2xl border border-charcoal/10 bg-black">
+        <div className="h-full w-full">
           <iframe
             src={`https://www.youtube.com/embed/${videoId}`}
             title={title}
@@ -280,12 +297,12 @@ function ResourceMedia({
     }
 
     return (
-      <div className="overflow-hidden rounded-2xl border border-ivory/10 bg-black">
+      <div className="aspect-square overflow-hidden rounded-2xl border border-charcoal/10 bg-black">
         <video
           controls
           playsInline
           preload="metadata"
-          className="aspect-video w-full"
+          className="h-full w-full object-cover"
           src={media.url}
         >
           Your browser does not support video playback.
@@ -303,18 +320,7 @@ function ResourceMedia({
     }
 
     return (
-      <div
-        className="rounded-2xl border border-ivory/10 bg-charcoal-soft p-6 sm:p-8"
-        style={
-          thumbnailUrl
-            ? {
-                backgroundImage: `linear-gradient(rgba(20, 18, 16, 0.72), rgba(20, 18, 16, 0.88)), url(${thumbnailUrl})`,
-                backgroundPosition: "center",
-                backgroundSize: "cover",
-              }
-            : undefined
-        }
-      >
+      <div className="aspect-square">
         <div className="mb-5 flex items-center justify-between gap-4">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ivory/60">
             {title}
@@ -332,14 +338,12 @@ function ResourceMedia({
           )}
         </div>
 
-        <audio
-          controls
-          preload="metadata"
-          className="w-full"
+        <CustomAudioPlayer
           src={media.url}
-        >
-          Your browser does not support audio playback.
-        </audio>
+          title={title}
+          thumbnailUrl={thumbnailUrl}
+                  fallbackIcon={fallbackIcon}
+        />
       </div>
     );
   }
@@ -352,30 +356,7 @@ function ResourceMedia({
       return null;
     }
 
-    return (
-      <div className="overflow-hidden rounded-2xl border border-ivory/10 bg-charcoal-soft">
-        <div className="flex items-center justify-between gap-4 border-b border-ivory/10 px-5 py-4 sm:px-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ivory/60">
-            {title}
-          </p>
-
-          <a
-            href={media.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gold transition-colors hover:text-ivory"
-          >
-            Open PDF ↗
-          </a>
-        </div>
-
-        <iframe
-          src={media.url}
-          title={title}
-          className="h-[70vh] min-h-[500px] w-full"
-        />
-      </div>
-    );
+    return <PdfPreview src={media.url} />;
   }
 
   /*
@@ -387,7 +368,7 @@ function ResourceMedia({
     }
 
     return (
-      <div className="overflow-hidden rounded-2xl border border-ivory/10 bg-charcoal-soft">
+      <div className="aspect-square overflow-hidden rounded-2xl border border-charcoal/10 bg-charcoal-soft">
         <img
           src={media.url}
           alt={title}

@@ -3,6 +3,7 @@
 import type {
   AdminMedia,
 } from "@/lib/admin-api";
+import type { ReactNode } from "react";
 
 import CustomAudioPlayer from "./CustomAudioPlayer";
 import ImagePreview from "./ImagePreview";
@@ -21,6 +22,7 @@ interface ResourceMediaPreviewProps {
   localPreviewUrl?: string | null;
 
   thumbnailUrl?: string | null;
+  fallbackIcon?: ReactNode;
 
   title?: string;
 }
@@ -47,6 +49,7 @@ export default function ResourceMediaPreview({
   media,
   localPreviewUrl,
   thumbnailUrl,
+  fallbackIcon,
   title,
 }: ResourceMediaPreviewProps) {
   if (!media) {
@@ -154,6 +157,7 @@ export default function ResourceMediaPreview({
       <CustomAudioPlayer
         src={url}
         thumbnailUrl={thumbnailUrl}
+        fallbackIcon={fallbackIcon}
         title={
           media.title ||
           title

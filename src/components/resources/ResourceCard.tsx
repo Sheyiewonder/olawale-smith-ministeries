@@ -76,7 +76,7 @@ export default function ResourceCard({
         {/* Visual */}
         <div
           className={[
-            "relative aspect-[4/3] overflow-hidden rounded-2xl",
+            "relative aspect-[16/10] overflow-hidden rounded-xl",
             "border",
             config.page.border,
             theme === "dark"
@@ -162,7 +162,7 @@ export default function ResourceCard({
           {/* Title */}
           <h3
             className={[
-              "section-heading text-2xl",
+              "section-heading text-xl",
               config.page.foreground,
               "transition-colors duration-300",
               config.page.accentHover,
@@ -175,7 +175,7 @@ export default function ResourceCard({
           {resource.description && (
             <p
               className={[
-                "mt-3 line-clamp-2 text-sm leading-7",
+                "mt-2 line-clamp-2 text-xs leading-6",
                 config.page.muted,
               ].join(" ")}
             >

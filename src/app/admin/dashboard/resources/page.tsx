@@ -26,6 +26,7 @@ import {
   deleteResource,
   type AdminResource,
 } from "@/lib/admin-api";
+import AdminDialog from "@/components/admin/AdminDialog";
 
 type ResourceType =
   | "SERMON"
@@ -144,6 +145,9 @@ export default function AdminResourcesPage() {
   const [deletingId, setDeletingId] =
     useState<string | null>(null);
 
+  const [resourceToDelete, setResourceToDelete] =
+    useState<AdminResource | null>(null);
+
   async function loadResources() {
     try {
       setLoading(true);
@@ -256,20 +260,21 @@ export default function AdminResourcesPage() {
     (resource) => resource.featured,
   ).length;
 
-  async function handleDelete(
+  function handleDelete(
     resource: AdminResource,
   ) {
-    const confirmed = window.confirm(
-      `Delete "${resource.title}"? This action cannot be undone.`,
-    );
+    setMenuId(null);
+    setResourceToDelete(resource);
+  }
 
-    if (!confirmed) {
+  async function confirmDelete() {
+    if (!resourceToDelete) {
       return;
     }
 
+    const resource = resourceToDelete;
     try {
       setDeletingId(resource.id);
-      setMenuId(null);
 
       await deleteResource(resource.id);
 
@@ -278,6 +283,7 @@ export default function AdminResourcesPage() {
           (item) => item.id !== resource.id,
         ),
       );
+      setResourceToDelete(null);
     } catch (error) {
       window.alert(
         error instanceof Error
@@ -579,6 +585,26 @@ export default function AdminResourcesPage() {
           )}
         </div>
       </div>
+
+      <AdminDialog
+        open={Boolean(resourceToDelete)}
+        title="Delete resource?"
+        description={
+          resourceToDelete
+            ? `Delete "${resourceToDelete.title}"? This action cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete resource"
+        cancelLabel="Keep resource"
+        variant="danger"
+        loading={Boolean(deletingId)}
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          if (!deletingId) {
+            setResourceToDelete(null);
+          }
+        }}
+      />
     </main>
   );
 }
