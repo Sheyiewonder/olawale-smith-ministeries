@@ -41,6 +41,7 @@ import {
 
 import ResourceMediaPreview from "@/components/admin/resource-preview/ResourceMediaPreview";
 
+
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -1811,6 +1812,7 @@ export default function EditResourcePage() {
                           }
                           item={item}
                           index={index}
+                          resourceTitle={title}
                           fileInput={(element) => {
                             fileInputs.current[
                               index
@@ -1988,6 +1990,7 @@ export default function EditResourcePage() {
           type={type}
           speaker={speaker}
           media={media}
+          resourceTitle={title}
           onClose={() =>
             setShowPreview(false)
           }
@@ -2016,6 +2019,7 @@ export default function EditResourcePage() {
 function MediaEditor({
   item,
   index,
+  resourceTitle,
   onUpdate,
   onRemove,
   onFile,
@@ -2025,6 +2029,7 @@ function MediaEditor({
 }: {
   item: MediaItem;
   index: number;
+  resourceTitle: string;
 
   onUpdate: (
     patch: Partial<MediaItem>,
@@ -2551,7 +2556,8 @@ function MediaEditor({
                   : undefined
             }
             title={
-              item.title ||
+              resourceTitle.trim() ||
+              item.title.trim() ||
               item.fileName ||
               "Media preview"
             }
@@ -2568,6 +2574,7 @@ function MediaEditor({
 
 function PreviewDialog({
   title,
+  resourceTitle,
   description,
   content,
   type,
@@ -2576,6 +2583,7 @@ function PreviewDialog({
   onClose,
 }: {
   title: string;
+  resourceTitle: string;
   description: string;
   content: string;
   type: ResourceType;
@@ -2668,6 +2676,9 @@ function PreviewDialog({
                       `preview-${index}`
                     }
                     media={item}
+                    resourceTitle={
+                      resourceTitle
+                    }
                   />
                 ),
               )}
@@ -2685,8 +2696,10 @@ function PreviewDialog({
 
 function PreviewMedia({
   media,
+  resourceTitle,
 }: {
   media: MediaItem;
+  resourceTitle: string;
 }) {
   /**
    * Audio:
@@ -2727,9 +2740,7 @@ function PreviewMedia({
           thumbnailUrl
         }
         title={
-          media.title ||
-          media.fileName ||
-          "Resource media"
+          resourceTitle
         }
       />
     </div>

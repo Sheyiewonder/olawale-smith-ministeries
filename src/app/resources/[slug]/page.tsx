@@ -5,9 +5,10 @@ import {
   Mic2,
   Music2,
   Video,
+  ArrowLeft,
+  ArrowUpRight,
 } from "lucide-react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import PageLayout from "@/components/layout/PageLayout";
@@ -45,10 +46,10 @@ export default async function ResourceDetailPage({
     notFound();
   }
 
-  const category =
-    resource.categories[0]?.category;
+  const category = resource.categories[0]?.category;
 
   const typeLabel = typeLabels[resource.type];
+
   const ResourceIcon =
     resource.type === "SERMON"
       ? Mic2
@@ -67,6 +68,7 @@ export default async function ResourceDetailPage({
       media.type === "PDF" &&
       media.url,
   );
+
   const pdfThumbnail = pdfMedia?.url
     ?.replace(
       "/raw/upload/",
@@ -76,6 +78,7 @@ export default async function ResourceDetailPage({
       "/image/upload/",
       "/image/upload/pg_1,w_1200,c_fill/",
     );
+
   const thumbnailUrl =
     resource.thumbnail?.url ||
     pdfThumbnail;
@@ -121,6 +124,7 @@ export default async function ResourceDetailPage({
                   {category && (
                     <>
                       <span>{category.name}</span>
+
                       <span className="h-1 w-1 rounded-full bg-bronze/50" />
                     </>
                   )}
@@ -130,6 +134,7 @@ export default async function ResourceDetailPage({
                   {publishedDate && (
                     <>
                       <span className="h-1 w-1 rounded-full bg-bronze/50" />
+
                       <span>{publishedDate}</span>
                     </>
                   )}
@@ -149,6 +154,7 @@ export default async function ResourceDetailPage({
                   </p>
                 </Reveal>
               )}
+
               {resource.description && (
                 <Reveal delay={0.2}>
                   <p className="mt-8 max-w-2xl text-base leading-8 text-charcoal/60 sm:text-lg">
@@ -167,8 +173,14 @@ export default async function ResourceDetailPage({
                       <ResourceMedia
                         key={media.id}
                         media={media}
+                        resourceTitle={resource.title}
                         thumbnailUrl={thumbnailUrl}
-                        fallbackIcon={<ResourceIcon className="h-14 w-14 sm:h-20 sm:w-20" strokeWidth={0.7} />}
+                        fallbackIcon={
+                          <ResourceIcon
+                            className="h-14 w-14 sm:h-20 sm:w-20"
+                            strokeWidth={0.7}
+                          />
+                        }
                       />
                     ))}
                   </div>
@@ -182,7 +194,11 @@ export default async function ResourceDetailPage({
                       />
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-ivory-muted to-charcoal-soft text-bronze">
-                        <ResourceIcon size={72} strokeWidth={0.8} />
+                        <ResourceIcon
+                          size={72}
+                          strokeWidth={0.8}
+                        />
+
                         <span className="eyebrow text-bronze">
                           {typeLabel}
                         </span>
@@ -262,16 +278,23 @@ interface ResourceMediaProps {
     url?: string | null;
     externalId?: string | null;
   };
+
+  resourceTitle: string;
+
   thumbnailUrl?: string | null;
   fallbackIcon?: React.ReactNode;
 }
 
 function ResourceMedia({
   media,
+  resourceTitle,
   thumbnailUrl,
   fallbackIcon,
 }: ResourceMediaProps) {
-  const title = media.title ?? "Resource";
+  const title =
+    media.title?.trim() ||
+    resourceTitle ||
+    "Resource";
 
   /*
    * YouTube
@@ -360,7 +383,7 @@ function ResourceMedia({
           src={media.url}
           title={title}
           thumbnailUrl={thumbnailUrl}
-                  fallbackIcon={fallbackIcon}
+          fallbackIcon={fallbackIcon}
         />
       </div>
     );
@@ -374,7 +397,18 @@ function ResourceMedia({
       return null;
     }
 
-    return <PdfPreview src={media.url} />;
+    return (
+      <PdfPreview
+        src={media.url}
+        title={resourceTitle}
+        thumbnailUrl={
+          "thumbnailUrl" in media
+            ? (media as { thumbnailUrl?: string | null })
+                .thumbnailUrl
+            : null
+        }
+      />
+    );
   }
 
   /*

@@ -32,9 +32,8 @@ interface ResourceMediaPreviewProps {
   /**
    * Resource-level title.
    *
-   * Used as the fallback title for media
-   * previews and, importantly, as the PDF
-   * download filename.
+   * For PDFs, this title is used as the
+   * downloaded filename.
    */
   title?: string;
 }
@@ -79,7 +78,9 @@ export default function ResourceMediaPreview({
     return (
       <div className="flex min-h-[260px] items-center justify-center rounded-2xl border border-dashed bg-muted/20 p-8 text-center">
         <div>
-          <p className="text-sm font-medium">No media selected</p>
+          <p className="text-sm font-medium">
+            No media selected
+          </p>
 
           <p className="mt-1 text-xs text-muted-foreground">
             Add media to preview it here.
@@ -108,13 +109,19 @@ export default function ResourceMediaPreview({
   /* ------------------------------------------------------------------------ */
 
   /*
-   * Prefer the media item's own title.
+   * The resource title is the primary title.
    *
-   * Fall back to the parent resource title.
+   * This is especially important for PDFs because the resource title
+   * should determine the downloaded filename.
+   *
+   * Media title is only used as a fallback when no resource title
+   * was provided.
    */
+  const resourceTitle = title?.trim();
+
   const previewTitle =
+    resourceTitle ||
     media.title?.trim() ||
-    title?.trim() ||
     undefined;
 
   /* ------------------------------------------------------------------------ */
@@ -173,22 +180,29 @@ export default function ResourceMediaPreview({
 
   if (media.type === "PDF") {
     /*
-     * PDF thumbnails are stored directly on the MediaAsset as
-     * media.thumbnailUrl.
+     * IMPORTANT:
      *
-     * This is intentionally separate from the audio thumbnail
-     * prop because every PDF can have its own Cloudinary-generated
-     * first-page thumbnail.
+     * Always prefer the resource title for PDFs.
      *
-     * PdfPreview will:
-     * 1. Show the Cloudinary thumbnail when available.
-     * 2. Fall back to the browser PDF viewer when unavailable.
-     * 3. Use the resource title for the downloaded filename.
+     * Example:
+     *
+     * Resource title:
+     * "Walking in Purpose"
+     *
+     * Download:
+     * "Walking in Purpose.pdf"
+     *
+     * The uploaded PDF filename is NOT used as the download filename.
      */
+    const pdfTitle =
+      resourceTitle ||
+      media.title?.trim() ||
+      undefined;
+
     return (
       <PdfPreview
         src={url}
-        title={previewTitle}
+        title={pdfTitle}
         thumbnailUrl={media.thumbnailUrl ?? null}
       />
     );

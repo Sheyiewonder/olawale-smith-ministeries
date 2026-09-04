@@ -1360,6 +1360,7 @@ export default function NewResourcePage() {
                               file,
                             )
                           }
+                          resourceTitle={title}
                           onUpdate={(patch) =>
                             updateMedia(
                               index,
@@ -1515,6 +1516,7 @@ function MediaEditor({
   onUpdate,
   onRemove,
   onFile,
+  resourceTitle,
   onThumbnailFile,
   fileInput,
   thumbnailInput,
@@ -1535,6 +1537,8 @@ function MediaEditor({
   onThumbnailFile: (
     file?: File,
   ) => void;
+
+  resourceTitle: string;
 
   fileInput: (
     element: HTMLInputElement | null,
@@ -2067,7 +2071,8 @@ function MediaEditor({
                 : undefined
             }
             title={
-              item.title ||
+              resourceTitle.trim() ||
+              item.title.trim() ||
               item.fileName ||
               "Media preview"
             }
@@ -2181,6 +2186,7 @@ function PreviewDialog({
                   <PreviewMedia
                     key={index}
                     media={item}
+                    resourceTitle={title}
                   />
                 ),
               )}
@@ -2198,8 +2204,10 @@ function PreviewDialog({
 
 function PreviewMedia({
   media,
+  resourceTitle,
 }: {
   media: MediaItem;
+  resourceTitle: string;
 }) {
   /*
    * AUDIO uses its manually uploaded artwork.
@@ -2228,7 +2236,8 @@ function PreviewMedia({
         }
         thumbnailUrl={thumbnailUrl}
         title={
-          media.title ||
+          resourceTitle.trim() ||
+          media.title.trim() ||
           media.fileName ||
           "Resource media"
         }
