@@ -270,9 +270,11 @@ export default function CustomAudioPlayer({
               backgroundSize: "cover",
             }
           : {
-              background: "rgba(245, 240, 230, 0.72)",
+              background:
+                "rgba(245, 240, 230, 0.72)",
               backdropFilter: "blur(18px)",
-              WebkitBackdropFilter: "blur(18px)",
+              WebkitBackdropFilter:
+                "blur(18px)",
             }
       }
     >
@@ -307,7 +309,7 @@ export default function CustomAudioPlayer({
       >
         {fallbackIcon || (
           <Volume2
-            className="h-14 w-14 sm:h-20 sm:w-20 y-20"
+            className="h-14 w-14 sm:h-20 sm:w-20"
             strokeWidth={0.8}
           />
         )}
@@ -316,8 +318,8 @@ export default function CustomAudioPlayer({
       <div
         className={`relative z-10 mx-auto w-full max-w-sm pb-1 text-center ${
           !thumbnailUrl
-            ? "pt-20 sm:pt-24"
-            : "pt-16 sm:pt-20"
+            ? "pt-16 sm:pt-20"
+            : "pt-14 sm:pt-16"
         }`}
       >
         {/* Scrollable resource title */}
@@ -346,7 +348,7 @@ export default function CustomAudioPlayer({
           </p>
         )}
 
-        <div className="mt-5 flex items-center gap-3">
+        <div className="mt-4 flex items-center gap-3">
           {/* Progress */}
           <input
             type="range"
@@ -369,9 +371,7 @@ export default function CustomAudioPlayer({
           {/* Volume */}
           <div className="relative shrink-0">
             {showVolume && (
-              <div
-                className="absolute bottom-full left-1/2 mb-3 flex h-24 -translate-x-1/2 items-center justify-center rounded-full border border-charcoal/10 bg-ivory px-2 py-3 shadow-xl"
-              >
+              <div className="absolute bottom-full left-1/2 mb-3 flex h-24 -translate-x-1/2 items-center justify-center bg-transparent px-2 py-3 shadow-xl">
                 <input
                   type="range"
                   min={0}
@@ -413,19 +413,19 @@ export default function CustomAudioPlayer({
 
         {/* Time */}
         <div
-          className={`mt-1 flex justify-between text-[10px] ${mutedTextColor}`}
+          className={`mt-1 flex justify-between px-0.5 text-[10px] ${mutedTextColor}`}
         >
           <span>
             {formatTime(currentTime)}
           </span>
 
-          <span>
+          <span className="mr-9">
             {formatTime(duration)}
           </span>
         </div>
 
         {/* Controls */}
-        <div className="mt-6 flex items-center justify-center gap-3">
+        <div className="mt-5 flex items-center justify-center gap-3">
           {/* Playback speed */}
           <label
             className={`relative inline-flex h-8 w-8 items-center justify-center rounded-full border ${borderColor} text-[9px] font-semibold ${mutedTextColor}`}
