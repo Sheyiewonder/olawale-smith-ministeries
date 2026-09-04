@@ -60,25 +60,6 @@ export type MediaType =
   | "IMAGE"
   | "VIDEO";
 
-/*
- * Must stay synchronized with schema.prisma.
- *
- * CLOUDINARY:
- * - Sermon/audio files
- * - Ebook/PDF files
- * - Other larger media
- *
- * SUPABASE:
- * - Thumbnails
- * - Article images
- * - Other lightweight images
- *
- * YOUTUBE:
- * - YouTube-hosted videos
- *
- * EXTERNAL:
- * - Other externally hosted resources
- */
 export type MediaProvider =
   | "CLOUDINARY"
   | "SUPABASE"
@@ -176,17 +157,41 @@ export interface AdminMedia {
   mimeType?: string | null;
 
   /*
-   * Stored as a string in PostgreSQL/API responses
-   * to avoid integer overflow / BigInt serialization
-   * issues in the frontend.
+   * Stored as a string in the API.
+   *
+   * This prevents integer/BigInt serialization
+   * issues between Prisma, Fastify and the frontend.
    */
   fileSize?: string | null;
 
   duration?: number | null;
 
+  /*
+   * Media-specific thumbnail.
+   *
+   * PDF:
+   *   Cloudinary-generated JPG of page 1.
+   *
+   * AUDIO:
+   *   Optional uploaded artwork/thumbnail.
+   *
+   * IMAGE:
+   *   Usually not required because the media URL
+   *   itself is already an image.
+   *
+   * VIDEO:
+   *   Usually not used because videos are external
+   *   YouTube/URL media.
+   */
+  thumbnailUrl?: string | null;
+
   createdAt?: string;
   updatedAt?: string;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Create Media Input                                                         */
+/* -------------------------------------------------------------------------- */
 
 export interface CreateMediaInput {
   type: MediaType;
@@ -204,13 +209,27 @@ export interface CreateMediaInput {
   mimeType?: string;
 
   /*
-   * Keep this as string because MediaAsset.fileSize
-   * is String in Prisma.
+   * MediaAsset.fileSize is stored as a Prisma String.
    */
   fileSize?: string;
 
   duration?: number;
+
+  /*
+   * Media-specific thumbnail.
+   *
+   * For PDFs:
+   *   Cloudinary first-page thumbnail.
+   *
+   * For AUDIO:
+   *   Uploaded artwork/thumbnail.
+   */
+  thumbnailUrl?: string;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Update Media Input                                                         */
+/* -------------------------------------------------------------------------- */
 
 export interface UpdateMediaInput {
   type?: MediaType;
@@ -230,6 +249,14 @@ export interface UpdateMediaInput {
   fileSize?: string | null;
 
   duration?: number | null;
+
+  /*
+   * Media-specific thumbnail.
+   *
+   * PDF -> Cloudinary first-page thumbnail.
+   * AUDIO -> artwork/thumbnail.
+   */
+  thumbnailUrl?: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -297,10 +324,32 @@ export interface AdminResource {
 
   publishedAt?: string | null;
 
+  /*
+   * Resource-level thumbnail.
+   *
+   * This is separate from media.thumbnailUrl.
+   *
+   * Example:
+   * resource.thumbnail
+   *       ↓
+   * resource thumbnail image
+   *
+   * While:
+   *
+   * resource.media[].thumbnailUrl
+   *       ↓
+   * PDF/audio-specific thumbnail
+   */
   thumbnailId?: string | null;
 
   thumbnail?: AdminMedia | null;
 
+  /*
+   * Individual media assets belonging to
+   * this resource.
+   *
+   * A PDF can have its own thumbnailUrl.
+   */
   media?: AdminMedia[];
 
   categories?: AdminResourceCategory[];
@@ -317,6 +366,27 @@ export interface AdminResource {
 /* -------------------------------------------------------------------------- */
 /* Resource Inputs                                                            */
 /* -------------------------------------------------------------------------- */
+
+export interface ResourceThumbnailInput {
+  type: "IMAGE";
+
+  provider: "CLOUDINARY";
+
+  title?: string;
+
+  url?: string;
+
+  storageKey?: string;
+
+  mimeType?: string;
+
+  fileSize?: string;
+
+  /*
+   * Optional thumbnail metadata.
+   */
+  thumbnailUrl?: string;
+}
 
 export interface CreateResourceInput {
   title: string;
@@ -340,9 +410,14 @@ export interface CreateResourceInput {
   publishedAt?: string | null;
 
   /*
-   * MediaAsset used as the resource thumbnail.
+   * Resource-level thumbnail.
+   *
+   * This is different from the thumbnailUrl
+   * attached to an individual media asset.
    */
   thumbnailId?: string | null;
+
+  thumbnail?: ResourceThumbnailInput;
 
   categoryIds?: string[];
 
@@ -350,6 +425,21 @@ export interface CreateResourceInput {
 
   seriesId?: string | null;
 
+  /*
+   * Every media asset can have its own thumbnailUrl.
+   *
+   * PDF:
+   *
+   * media[].thumbnailUrl
+   *       ↓
+   * Cloudinary first-page JPG
+   *
+   * AUDIO:
+   *
+   * media[].thumbnailUrl
+   *       ↓
+   * Audio artwork
+   */
   media?: CreateMediaInput[];
 }
 
@@ -454,7 +544,17 @@ export async function adminRequest<T>(
     options.headers,
   );
 
-  if (options.body !== undefined) {
+  /*
+   * Only set JSON Content-Type when a body
+   * is actually being sent.
+   *
+   * FormData requests must allow the browser
+   * to automatically set the multipart boundary.
+   */
+  if (
+    options.body !== undefined &&
+    !(options.body instanceof FormData)
+  ) {
     headers.set(
       "Content-Type",
       "application/json",
@@ -523,6 +623,12 @@ export async function adminRequest<T>(
       ) {
         message =
           body.message.join(", ");
+      } else if (
+        typeof body?.error?.message ===
+        "string"
+      ) {
+        message =
+          body.error.message;
       }
     } catch {
       /*
@@ -561,46 +667,123 @@ export async function adminRequest<T>(
 /* Media Upload                                                               */
 /* -------------------------------------------------------------------------- */
 
+export type UploadableMediaType =
+  | "AUDIO"
+  | "PDF"
+  | "IMAGE";
+
 export interface UploadMediaResponse {
   success: boolean;
 
   data: {
+    /*
+     * Cloudinary identifiers.
+     */
     publicId: string;
+
     url: string;
+
     secureUrl: string;
+
     resourceType: string;
+
     format?: string;
+
     bytes: number;
+
     duration?: number;
+
     originalFilename: string;
-    type: "AUDIO" | "PDF" | "IMAGE";
+
+    mimeType?: string;
+
+    /*
+     * Normalized application media type.
+     *
+     * VIDEO is intentionally excluded because
+     * video files are not uploaded directly.
+     * Videos are represented using YouTube or
+     * external URLs.
+     */
+    type: UploadableMediaType;
+
+    /*
+     * Generated/associated media thumbnail.
+     *
+     * PDF:
+     *   Cloudinary first-page JPG.
+     *
+     * AUDIO:
+     *   Optional artwork if generated/provided.
+     */
+    thumbnailUrl?: string | null;
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Media Upload                                                               */
+/* -------------------------------------------------------------------------- */
+
 export async function uploadAdminMedia(
   file: File,
-  type: "AUDIO" | "PDF" | "IMAGE",
+  type: UploadableMediaType,
 ): Promise<UploadMediaResponse> {
   const token = getAdminToken();
 
   const formData = new FormData();
 
-  formData.append("type", type);
-  formData.append("file", file);
-
-  const response = await fetch(
-    `${API_URL}/admin/media/upload`,
-    {
-      method: "POST",
-      body: formData,
-      cache: "no-store",
-      headers: token
-        ? {
-            Authorization: `Bearer ${token}`,
-          }
-        : undefined,
-    },
+  /*
+   * IMPORTANT:
+   * Append the type before the file.
+   *
+   * The Fastify multipart route reads both
+   * fields from the multipart request.
+   */
+  formData.append(
+    "type",
+    type,
   );
+
+  formData.append(
+    "file",
+    file,
+  );
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${API_URL}/admin/media/upload`,
+      {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+
+        /*
+         * DO NOT manually set Content-Type.
+         *
+         * The browser automatically generates:
+         *
+         * multipart/form-data; boundary=...
+         */
+        headers: token
+          ? {
+              Authorization:
+                `Bearer ${token}`,
+            }
+          : undefined,
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Media upload request failed:",
+      error,
+    );
+
+    throw new Error(
+      "Unable to connect to the API server.",
+    );
+  }
 
   if (response.status === 401) {
     throw new Error(
@@ -613,20 +796,53 @@ export async function uploadAdminMedia(
       `Media upload failed (${response.status})`;
 
     try {
-      const body = await response.json();
+      const body =
+        await response.json();
 
-      if (typeof body?.message === "string") {
+      if (
+        typeof body?.message ===
+        "string"
+      ) {
         message = body.message;
-      } else if (typeof body?.error === "string") {
+      } else if (
+        typeof body?.error ===
+        "string"
+      ) {
         message = body.error;
-      } else if (Array.isArray(body?.message)) {
-        message = body.message.join(", ");
+      } else if (
+        Array.isArray(body?.message)
+      ) {
+        message =
+          body.message.join(", ");
+      } else if (
+        typeof body?.error?.message ===
+        "string"
+      ) {
+        message =
+          body.error.message;
       }
     } catch {
-      // Ignore invalid error responses.
+      /*
+       * Ignore invalid error responses.
+       */
     }
 
     throw new Error(message);
+  }
+
+  const contentType =
+    response.headers.get(
+      "content-type",
+    );
+
+  if (
+    !contentType?.includes(
+      "application/json",
+    )
+  ) {
+    throw new Error(
+      "Media upload returned an invalid response.",
+    );
   }
 
   return response.json();

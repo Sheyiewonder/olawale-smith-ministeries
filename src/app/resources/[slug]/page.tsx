@@ -62,6 +62,24 @@ export default async function ResourceDetailPage({
               ? Headphones
               : FileText;
 
+  const pdfMedia = resource.media.find(
+    (media) =>
+      media.type === "PDF" &&
+      media.url,
+  );
+  const pdfThumbnail = pdfMedia?.url
+    ?.replace(
+      "/raw/upload/",
+      "/image/upload/",
+    )
+    .replace(
+      "/image/upload/",
+      "/image/upload/pg_1,w_1200,c_fill/",
+    );
+  const thumbnailUrl =
+    resource.thumbnail?.url ||
+    pdfThumbnail;
+
   const publishedDate = resource.publishedAt
     ? new Intl.DateTimeFormat("en-US", {
         month: "long",
@@ -131,7 +149,6 @@ export default async function ResourceDetailPage({
                   </p>
                 </Reveal>
               )}
-
               {resource.description && (
                 <Reveal delay={0.2}>
                   <p className="mt-8 max-w-2xl text-base leading-8 text-charcoal/60 sm:text-lg">
@@ -150,16 +167,16 @@ export default async function ResourceDetailPage({
                       <ResourceMedia
                         key={media.id}
                         media={media}
-                        thumbnailUrl={resource.thumbnail?.url}
-                        fallbackIcon={<ResourceIcon size={92} strokeWidth={0.7} />}
+                        thumbnailUrl={thumbnailUrl}
+                        fallbackIcon={<ResourceIcon className="h-14 w-14 sm:h-20 sm:w-20" strokeWidth={0.7} />}
                       />
                     ))}
                   </div>
                 ) : (
                   <div className="relative aspect-square overflow-hidden rounded-2xl border border-charcoal/10 bg-ivory-muted">
-                    {resource.thumbnail?.url ? (
+                    {thumbnailUrl ? (
                       <img
-                        src={resource.thumbnail.url}
+                        src={thumbnailUrl}
                         alt={resource.title}
                         className="h-full w-full object-cover"
                       />
@@ -237,6 +254,7 @@ interface ResourceMediaProps {
     type: "AUDIO" | "PDF" | "IMAGE" | "VIDEO";
     provider:
       | "R2"
+      | "CLOUDINARY"
       | "YOUTUBE"
       | "SUPABASE"
       | "EXTERNAL";

@@ -46,6 +46,7 @@ export type MediaType =
 
 export type MediaProvider =
   | "R2"
+  | "CLOUDINARY"
   | "YOUTUBE"
   | "SUPABASE"
   | "EXTERNAL";
@@ -63,7 +64,7 @@ export interface MediaAsset {
   externalId?: string | null;
 
   mimeType?: string | null;
-  fileSize?: number | number | null;
+  fileSize?: string | null;
   duration?: number | null;
 }
 

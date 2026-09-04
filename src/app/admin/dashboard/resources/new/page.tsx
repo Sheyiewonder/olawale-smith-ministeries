@@ -42,6 +42,22 @@ import ResourceMediaPreview from "@/components/admin/resource-preview/ResourceMe
 /* Types                                                                      */
 /* -------------------------------------------------------------------------- */
 
+interface ThumbnailItem {
+  type: "IMAGE";
+  provider: "CLOUDINARY";
+  title: string;
+
+  url: string;
+  storageKey?: string;
+  mimeType?: string;
+  fileSize?: string;
+
+  uploading?: boolean;
+  fileName?: string;
+
+  localPreviewUrl?: string;
+}
+
 interface MediaItem {
   type: MediaType;
   provider: MediaProvider;
@@ -55,17 +71,52 @@ interface MediaItem {
   fileSize?: string;
   duration?: number;
 
+  /*
+   * Cloudinary-generated thumbnail.
+   *
+   * Currently this is primarily used by PDF media.
+   * It can also be returned for other Cloudinary media
+   * in the future without breaking the page.
+   */
+  thumbnailUrl?: string | null;
+
   uploading?: boolean;
   fileName?: string;
 
   /*
-   * Temporary browser URL.
-   *
-   * This lets us preview a selected device file immediately,
-   * even while the Cloudinary upload is still running.
+   * Temporary browser URL used while the permanent
+   * Cloudinary upload is still processing.
    */
   localPreviewUrl?: string;
+
+  /*
+   * Only AUDIO media can have a manually uploaded thumbnail.
+   */
+  thumbnail?: ThumbnailItem;
 }
+
+/*
+ * Resource-level thumbnail.
+ *
+ * This is still separate from media.thumbnailUrl.
+ *
+ * - AUDIO -> manually uploaded artwork can become the
+ *   resource-level thumbnail.
+ * - PDF -> thumbnailUrl belongs to the PDF MediaAsset itself.
+ * - YouTube -> YouTube preview is handled by the media preview.
+ */
+type CreateResourceWithThumbnailInput =
+  CreateResourceInput & {
+    thumbnail?: {
+      type: "IMAGE";
+      provider: "CLOUDINARY";
+      title?: string;
+      url?: string;
+      storageKey?: string;
+      mimeType?: string;
+      fileSize?: string;
+    };
+  };
 
 /* -------------------------------------------------------------------------- */
 /* Constants                                                                  */
@@ -106,22 +157,6 @@ const mediaProviders: {
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function inferMediaType(file: File): MediaType {
-  if (file.type.startsWith("audio/")) {
-    return "AUDIO";
-  }
-
-  if (file.type === "application/pdf") {
-    return "PDF";
-  }
-
-  if (file.type.startsWith("image/")) {
-    return "IMAGE";
-  }
-
-  return "VIDEO";
-}
-
 function getYouTubeId(
   url?: string,
   externalId?: string,
@@ -156,18 +191,20 @@ function getYouTubeEmbedUrl(
   return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
 }
 
-function getThumbnailUrl(
-  media: MediaItem[],
-): string | undefined {
-  return media.find(
-    (item) =>
-      item.type === "IMAGE" &&
-      (item.url || item.localPreviewUrl),
-  )?.url || media.find(
-    (item) =>
-      item.type === "IMAGE" &&
-      item.localPreviewUrl,
-  )?.localPreviewUrl;
+function inferMediaType(file: File): MediaType {
+  if (file.type.startsWith("audio/")) {
+    return "AUDIO";
+  }
+
+  if (file.type === "application/pdf") {
+    return "PDF";
+  }
+
+  if (file.type.startsWith("image/")) {
+    return "IMAGE";
+  }
+
+  return "VIDEO";
 }
 
 function formatFileSize(bytes?: string): string {
@@ -214,24 +251,16 @@ export default function NewResourcePage() {
 
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-
-  const [description, setDescription] =
-    useState("");
-
-  const [content, setContent] =
-    useState("");
+  const [description, setDescription] = useState("");
+  const [content, setContent] = useState("");
 
   const [type, setType] =
     useState<ResourceType>("SERMON");
 
-  const [speaker, setSpeaker] =
-    useState("");
+  const [speaker, setSpeaker] = useState("");
 
-  const [featured, setFeatured] =
-    useState(false);
-
-  const [published, setPublished] =
-    useState(false);
+  const [featured, setFeatured] = useState(false);
+  const [published, setPublished] = useState(false);
 
   const [categories, setCategories] =
     useState<AdminCategory[]>([]);
@@ -267,6 +296,10 @@ export default function NewResourcePage() {
     useState(false);
 
   const fileInputs = useRef<
+    Record<number, HTMLInputElement | null>
+  >({});
+
+  const thumbnailInputs = useRef<
     Record<number, HTMLInputElement | null>
   >({});
 
@@ -321,17 +354,23 @@ export default function NewResourcePage() {
             item.localPreviewUrl,
           );
         }
+
+        if (
+          item.thumbnail?.localPreviewUrl
+        ) {
+          URL.revokeObjectURL(
+            item.thumbnail.localPreviewUrl,
+          );
+        }
       });
     };
-  }, [media]);
+  }, []);
 
   /* ------------------------------------------------------------------------ */
   /* Basic handlers                                                           */
   /* ------------------------------------------------------------------------ */
 
-  function handleTitleChange(
-    value: string,
-  ) {
+  function handleTitleChange(value: string) {
     setTitle(value);
 
     if (!slug.trim()) {
@@ -350,13 +389,6 @@ export default function NewResourcePage() {
   }
 
   function addMedia() {
-    /*
-     * A newly added media card is intentionally empty.
-     *
-     * Validation ignores completely empty cards,
-     * so merely clicking "Add Media" can never
-     * trigger "Media type required".
-     */
     setMedia((current) => [
       ...current,
       {
@@ -394,6 +426,14 @@ export default function NewResourcePage() {
       );
     }
 
+    if (
+      item?.thumbnail?.localPreviewUrl
+    ) {
+      URL.revokeObjectURL(
+        item.thumbnail.localPreviewUrl,
+      );
+    }
+
     setMedia((current) =>
       current.filter(
         (_, i) => i !== index,
@@ -402,7 +442,7 @@ export default function NewResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Device Upload                                                            */
+  /* Main Device Upload                                                       */
   /* ------------------------------------------------------------------------ */
 
   async function handleFileUpload(
@@ -418,14 +458,15 @@ export default function NewResourcePage() {
     const mediaType =
       inferMediaType(file);
 
-    /*
-     * Create a local browser preview immediately.
-     *
-     * This exists independently from Cloudinary.
-     */
     const localPreviewUrl =
       URL.createObjectURL(file);
 
+    /*
+     * Update the card immediately.
+     *
+     * This gives the administrator an instant local
+     * preview while the Cloudinary upload is happening.
+     */
     updateMedia(index, {
       type: mediaType,
       provider: "CLOUDINARY",
@@ -438,13 +479,30 @@ export default function NewResourcePage() {
       fileSize: String(file.size),
       storageKey: undefined,
       duration: undefined,
+
+      /*
+       * Clear any previous Cloudinary-generated thumbnail
+       * when replacing the actual media file.
+       *
+       * This is especially important for PDFs so an old
+       * PDF thumbnail is never displayed for a new file.
+       */
+      thumbnailUrl: undefined,
+
+      /*
+       * A thumbnail is only meaningful for AUDIO.
+       *
+       * If the user replaces an existing audio file with
+       * another media type, remove the audio thumbnail.
+       */
+      ...(mediaType !== "AUDIO"
+        ? {
+            thumbnail: undefined,
+          }
+        : {}),
     });
 
     try {
-      /*
-       * The actual permanent upload happens immediately,
-       * before the resource is created.
-       */
       const uploaded =
         await uploadAdminMedia(
           file,
@@ -454,48 +512,194 @@ export default function NewResourcePage() {
             | "IMAGE",
         );
 
+      console.log(
+        "CLOUDINARY UPLOAD RESULT:",
+        uploaded.data,
+      );
+
+      console.log(
+        "CLOUDINARY MEDIA URL:",
+        uploaded.data.secureUrl,
+      );
+
+      /*
+       * IMPORTANT:
+       *
+       * thumbnailUrl comes from the backend.
+       *
+       * For PDFs this is the Cloudinary-generated
+       * first-page JPG thumbnail.
+       */
       updateMedia(index, {
         type: mediaType,
         provider: "CLOUDINARY",
         uploading: false,
 
-        /*
-         * Permanent Cloudinary URL.
-         */
-        url: uploaded.data.secureUrl,
+        url:
+          uploaded.data.secureUrl,
 
         storageKey:
           uploaded.data.publicId,
 
-        mimeType: file.type,
+        mimeType:
+          file.type,
 
         fileSize:
-          String(uploaded.data.bytes),
+          String(
+            uploaded.data.bytes ??
+              file.size,
+          ),
 
         duration:
           uploaded.data.duration,
 
         /*
-         * The permanent URL now owns the preview.
+         * Persist the generated thumbnail URL
+         * in the local media state.
+         *
+         * ResourceMediaPreview will pass this to
+         * PdfPreview for PDF media.
+         */
+        thumbnailUrl:
+          uploaded.data.thumbnailUrl ??
+          undefined,
+
+        /*
+         * The permanent Cloudinary URL is now
+         * available, so the temporary browser
+         * preview is no longer needed.
          */
         localPreviewUrl: undefined,
       });
 
-      URL.revokeObjectURL(localPreviewUrl);
+      URL.revokeObjectURL(
+        localPreviewUrl,
+      );
     } catch (err) {
-      /* Keep the local preview visible so the user can retry. */
+      /*
+       * Keep the local preview available so the
+       * administrator can retry the upload.
+       */
       updateMedia(index, {
         uploading: false,
         localPreviewUrl,
         url: "",
         storageKey: undefined,
         duration: undefined,
+
+        /*
+         * Make sure a stale generated thumbnail
+         * cannot remain after a failed replacement.
+         */
+        thumbnailUrl: undefined,
       });
 
       setError(
         err instanceof Error
           ? err.message
           : "Unable to upload media.",
+      );
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Audio Thumbnail Upload                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  async function handleThumbnailUpload(
+    index: number,
+    file?: File,
+  ) {
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setError(
+        "Audio thumbnails must be image files.",
+      );
+      return;
+    }
+
+    setError("");
+
+    const localPreviewUrl =
+      URL.createObjectURL(file);
+
+    const currentThumbnail =
+      media[index]?.thumbnail;
+
+    if (
+      currentThumbnail?.localPreviewUrl
+    ) {
+      URL.revokeObjectURL(
+        currentThumbnail.localPreviewUrl,
+      );
+    }
+
+    updateMedia(index, {
+      thumbnail: {
+        type: "IMAGE",
+        provider: "CLOUDINARY",
+        title: `${title || "Resource"} thumbnail`,
+        url: "",
+        uploading: true,
+        fileName: file.name,
+        localPreviewUrl,
+        mimeType: file.type,
+        fileSize: String(file.size),
+      },
+    });
+
+    try {
+      const uploaded =
+        await uploadAdminMedia(
+          file,
+          "IMAGE",
+        );
+
+      updateMedia(index, {
+        thumbnail: {
+          type: "IMAGE",
+          provider: "CLOUDINARY",
+          title: `${title || "Resource"} thumbnail`,
+          url:
+            uploaded.data.secureUrl,
+          storageKey:
+            uploaded.data.publicId,
+          mimeType: file.type,
+          fileSize:
+            String(
+              uploaded.data.bytes ??
+                file.size,
+            ),
+          uploading: false,
+          fileName: file.name,
+        },
+      });
+
+      URL.revokeObjectURL(
+        localPreviewUrl,
+      );
+    } catch (err) {
+      updateMedia(index, {
+        thumbnail: {
+          type: "IMAGE",
+          provider: "CLOUDINARY",
+          title: `${title || "Resource"} thumbnail`,
+          url: "",
+          uploading: false,
+          fileName: file.name,
+          localPreviewUrl,
+          mimeType: file.type,
+          fileSize: String(file.size),
+        },
+      });
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to upload audio thumbnail.",
       );
     }
   }
@@ -512,13 +716,18 @@ export default function NewResourcePage() {
     ) {
       const item = media[i];
 
-      /*
-       * Never allow creation while a file is uploading.
-       */
       if (item.uploading) {
         return `Media ${
           i + 1
         }: Please wait for the upload to finish.`;
+      }
+
+      if (
+        item.thumbnail?.uploading
+      ) {
+        return `Media ${
+          i + 1
+        }: Please wait for the audio thumbnail upload to finish.`;
       }
 
       const hasUrl =
@@ -528,10 +737,7 @@ export default function NewResourcePage() {
         !!item.externalId.trim();
 
       /*
-       * Completely empty media cards are valid.
-       *
-       * This is important because a user can click
-       * "Add Media" before deciding what to attach.
+       * Completely empty media cards are ignored.
        */
       if (
         !hasUrl &&
@@ -540,18 +746,12 @@ export default function NewResourcePage() {
         continue;
       }
 
-      /*
-       * A populated media card must have a type.
-       */
       if (!item.type) {
         return `Media ${
           i + 1
         }: Media type is required.`;
       }
 
-      /*
-       * YouTube requires either a URL or video ID.
-       */
       if (
         item.provider ===
         "YOUTUBE"
@@ -579,6 +779,23 @@ export default function NewResourcePage() {
         return `Media ${
           i + 1
         }: Please provide a media URL.`;
+      }
+
+      /*
+       * AUDIO is the only media type that requires
+       * a manually supplied thumbnail.
+       */
+      if (
+        item.type === "AUDIO"
+      ) {
+        const hasThumbnail =
+          !!item.thumbnail?.url?.trim();
+
+        if (!hasThumbnail) {
+          return `Media ${
+            i + 1
+          }: Please upload a thumbnail for this audio.`;
+        }
       }
     }
 
@@ -616,30 +833,6 @@ export default function NewResourcePage() {
       return;
     }
 
-    const hasYouTubeMedia = media.some(
-      (item) =>
-        item.provider === "YOUTUBE" &&
-        Boolean(
-          getYouTubeId(
-            item.url,
-            item.externalId,
-          ),
-        ),
-    );
-
-    const hasImageMedia = media.some(
-      (item) =>
-        item.type === "IMAGE" &&
-        item.url.trim(),
-    );
-
-    if (!hasYouTubeMedia && !hasImageMedia) {
-      setError(
-        "Please upload an image to use as this resource thumbnail, or add YouTube media.",
-      );
-      return;
-    }
-
     const mediaError =
       validateMedia();
 
@@ -652,17 +845,46 @@ export default function NewResourcePage() {
       setSaving(true);
 
       /*
-       * Remove empty media cards before creating
-       * the resource.
+       * Remove empty media cards.
+       */
+      const populatedMedia =
+        media.filter(
+          (item) =>
+            item.url.trim() ||
+            item.externalId.trim(),
+        );
+
+      /*
+       * Resource-level thumbnail.
+       *
+       * The first AUDIO thumbnail becomes the resource's
+       * official thumbnail.
+       *
+       * YouTube and PDF thumbnails remain attached to
+       * their respective media items.
+       */
+      const audioThumbnail =
+        populatedMedia.find(
+          (item) =>
+            item.type === "AUDIO" &&
+            item.thumbnail?.url?.trim(),
+        )?.thumbnail;
+
+      /*
+       * IMPORTANT:
+       *
+       * thumbnailUrl is intentionally preserved here.
+       *
+       * For PDF media this contains the Cloudinary-generated
+       * first-page thumbnail URL.
+       *
+       * Without this property, the PDF thumbnail would work
+       * immediately on the create page but disappear after
+       * the resource is saved.
        */
       const cleanedMedia =
-        media
-          .filter(
-            (item) =>
-              item.url.trim() ||
-              item.externalId.trim(),
-          )
-          .map((item) => ({
+        populatedMedia.map(
+          (item) => ({
             type: item.type,
 
             provider:
@@ -691,9 +913,18 @@ export default function NewResourcePage() {
 
             duration:
               item.duration,
-          }));
 
-      const input: CreateResourceInput =
+            /*
+             * Preserve Cloudinary-generated PDF
+             * thumbnail URLs.
+             */
+            thumbnailUrl:
+              item.thumbnailUrl ??
+              undefined,
+          }),
+        );
+
+      const input: CreateResourceWithThumbnailInput =
         {
           title: trimmedTitle,
 
@@ -722,17 +953,40 @@ export default function NewResourcePage() {
 
           tagIds: [],
 
-          media: cleanedMedia,
+          media:
+            cleanedMedia,
+
+          /*
+           * Only AUDIO can populate this field.
+           *
+           * The backend will create this as the separate
+           * Resource.thumbnail relation.
+           */
+          ...(audioThumbnail?.url
+            ? {
+                thumbnail: {
+                  type: "IMAGE",
+                  provider:
+                    "CLOUDINARY",
+                  title:
+                    audioThumbnail.title ||
+                    `${trimmedTitle} thumbnail`,
+                  url:
+                    audioThumbnail.url,
+                  storageKey:
+                    audioThumbnail.storageKey,
+                  mimeType:
+                    audioThumbnail.mimeType,
+                  fileSize:
+                    audioThumbnail.fileSize,
+                },
+              }
+            : {}),
         };
 
-      /*
-       * At this point every Cloudinary upload
-       * has already happened.
-       *
-       * This request only creates the resource
-       * and attaches the already-uploaded media.
-       */
-      await createResource(input);
+      await createResource(
+        input as CreateResourceInput,
+      );
 
       setShowSuccess(true);
     } catch (err) {
@@ -1084,14 +1338,24 @@ export default function NewResourcePage() {
                           key={index}
                           item={item}
                           index={index}
-                          thumbnailUrl={getThumbnailUrl(media)}
                           fileInput={(element) => {
                             fileInputs.current[
                               index
                             ] = element;
                           }}
+                          thumbnailInput={(element) => {
+                            thumbnailInputs.current[
+                              index
+                            ] = element;
+                          }}
                           onFile={(file) =>
                             handleFileUpload(
+                              index,
+                              file,
+                            )
+                          }
+                          onThumbnailFile={(file) =>
+                            handleThumbnailUpload(
                               index,
                               file,
                             )
@@ -1169,7 +1433,8 @@ export default function NewResourcePage() {
                   saving ||
                   media.some(
                     (item) =>
-                      item.uploading,
+                      item.uploading ||
+                      item.thumbnail?.uploading,
                   )
                 }
                 className="mt-3 group flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
@@ -1247,21 +1512,35 @@ export default function NewResourcePage() {
 function MediaEditor({
   item,
   index,
-  thumbnailUrl,
   onUpdate,
   onRemove,
   onFile,
+  onThumbnailFile,
   fileInput,
+  thumbnailInput,
 }: {
   item: MediaItem;
   index: number;
-  thumbnailUrl?: string;
+
   onUpdate: (
     patch: Partial<MediaItem>,
   ) => void;
+
   onRemove: () => void;
-  onFile: (file?: File) => void;
+
+  onFile: (
+    file?: File,
+  ) => void;
+
+  onThumbnailFile: (
+    file?: File,
+  ) => void;
+
   fileInput: (
+    element: HTMLInputElement | null,
+  ) => void;
+
+  thumbnailInput: (
     element: HTMLInputElement | null,
   ) => void;
 }) {
@@ -1283,6 +1562,23 @@ function MediaEditor({
           item.externalId,
         )
       : null;
+
+  /*
+   * AUDIO thumbnail:
+   * manually uploaded artwork.
+   *
+   * PDF thumbnail:
+   * generated by Cloudinary and returned
+   * from the backend.
+   */
+  const thumbnailUrl =
+    item.type === "AUDIO"
+      ? item.thumbnail?.url ||
+        item.thumbnail?.localPreviewUrl
+      : item.type === "PDF"
+        ? item.thumbnailUrl ||
+          undefined
+        : undefined;
 
   return (
     <div className="border border-charcoal/10 p-5">
@@ -1322,12 +1618,41 @@ function MediaEditor({
         <Field label="Media Type">
           <select
             value={item.type}
-            onChange={(event) =>
+            onChange={(event) => {
+              const nextType =
+                event.target
+                  .value as MediaType;
+
               onUpdate({
-                type: event.target
-                  .value as MediaType,
-              })
-            }
+                type: nextType,
+
+                /*
+                 * Only AUDIO can have a manually uploaded
+                 * thumbnail.
+                 */
+                ...(nextType !== "AUDIO"
+                  ? {
+                      thumbnail:
+                        undefined,
+                    }
+                  : {}),
+
+                /*
+                 * Cloudinary-generated thumbnails are
+                 * associated with the uploaded PDF itself.
+                 *
+                 * Clear this when manually changing the
+                 * media type so the wrong thumbnail cannot
+                 * remain attached.
+                 */
+                ...(nextType !== "PDF"
+                  ? {
+                      thumbnailUrl:
+                        undefined,
+                    }
+                  : {}),
+              });
+            }}
             className="input"
           >
             {mediaTypes.map(
@@ -1358,10 +1683,6 @@ function MediaEditor({
               onUpdate({
                 provider,
 
-                /*
-                 * YouTube keeps its ID.
-                 * Other providers do not use externalId.
-                 */
                 externalId:
                   provider ===
                   "YOUTUBE"
@@ -1369,20 +1690,10 @@ function MediaEditor({
                     : "",
 
                 /*
-                 * Switching provider means
-                 * the current URL should not
-                 * accidentally be reused.
+                 * Do not destroy an already uploaded
+                 * Cloudinary URL unnecessarily.
                  */
-                url:
-                  provider ===
-                  "CLOUDINARY"
-                    ? item.url
-                    : provider ===
-                        "YOUTUBE" ||
-                      provider ===
-                        "EXTERNAL"
-                      ? item.url
-                      : item.url,
+                url: item.url,
               });
             }}
             className="input"
@@ -1515,7 +1826,157 @@ function MediaEditor({
         </div>
       )}
 
-      {/* External / YouTube URL */}
+      {/* -------------------------------------------------------------------- */}
+      {/* PDF Thumbnail                                                        */}
+      {/* -------------------------------------------------------------------- */}
+
+      {item.type === "PDF" &&
+        item.provider ===
+          "CLOUDINARY" &&
+        item.thumbnailUrl && (
+          <div className="mt-5 border border-charcoal/10 bg-charcoal/[0.02] p-5">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
+                PDF Preview Thumbnail
+              </p>
+
+              <p className="mt-1 max-w-md text-[11px] leading-5 text-charcoal/40">
+                Automatically generated from
+                the first page of the PDF.
+              </p>
+            </div>
+
+            <div className="mt-4 overflow-hidden border border-charcoal/10 bg-charcoal">
+              <img
+                src={item.thumbnailUrl}
+                alt="PDF first page preview"
+                className="block max-h-[420px] w-full object-contain"
+              />
+            </div>
+          </div>
+        )}
+
+      {/* -------------------------------------------------------------------- */}
+      {/* Audio Thumbnail                                                      */}
+      {/* -------------------------------------------------------------------- */}
+
+      {item.type === "AUDIO" && (
+        <div className="mt-5 border border-charcoal/10 bg-charcoal/[0.02] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
+                Audio Thumbnail
+                <span className="ml-1">
+                  *
+                </span>
+              </p>
+
+              <p className="mt-1 max-w-md text-[11px] leading-5 text-charcoal/40">
+                Upload the artwork that
+                will appear behind the
+                glass audio player.
+              </p>
+            </div>
+
+            <input
+              data-thumbnail-upload={
+                index
+              }
+              ref={thumbnailInput}
+              type="file"
+              className="hidden"
+              accept="image/*"
+              onChange={(event) => {
+                onThumbnailFile(
+                  event.target.files?.[0],
+                );
+
+                event.currentTarget.value =
+                  "";
+              }}
+            />
+
+            <button
+              type="button"
+              disabled={
+                item.thumbnail
+                  ?.uploading
+              }
+              onClick={() =>
+                document
+                  .querySelector<HTMLInputElement>(
+                    `input[data-thumbnail-upload="${index}"]`,
+                  )
+                  ?.click()
+              }
+              className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ImageIcon size={14} />
+
+              {item.thumbnail
+                ?.uploading
+                ? "Uploading..."
+                : item.thumbnail?.url
+                  ? "Replace Thumbnail"
+                  : "Upload Thumbnail"}
+            </button>
+          </div>
+
+          {item.thumbnail && (
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              {thumbnailUrl && (
+                <div className="h-16 w-24 overflow-hidden border border-charcoal/10 bg-charcoal">
+                  <img
+                    src={thumbnailUrl}
+                    alt="Audio thumbnail preview"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div className="min-w-0">
+                {item.thumbnail.fileName && (
+                  <p className="max-w-xs truncate text-xs text-charcoal/55">
+                    {
+                      item.thumbnail
+                        .fileName
+                    }
+                  </p>
+                )}
+
+                {item.thumbnail
+                  .fileSize && (
+                  <p className="mt-1 text-[10px] uppercase tracking-[0.1em] text-charcoal/30">
+                    {formatFileSize(
+                      item.thumbnail
+                        .fileSize,
+                    )}
+                  </p>
+                )}
+
+                {item.thumbnail
+                  .uploading && (
+                  <p className="mt-2 text-[10px] text-charcoal/35">
+                    Uploading thumbnail...
+                  </p>
+                )}
+
+                {!item.thumbnail
+                  .uploading &&
+                  item.thumbnail.url && (
+                    <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.1em] text-green-700">
+                      Thumbnail uploaded
+                    </p>
+                  )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* -------------------------------------------------------------------- */}
+      {/* External / YouTube URL                                               */}
+      {/* -------------------------------------------------------------------- */}
 
       {item.provider !==
         "CLOUDINARY" && (
@@ -1591,7 +2052,20 @@ function MediaEditor({
             localPreviewUrl={
               item.localPreviewUrl
             }
-            thumbnailUrl={thumbnailUrl}
+
+            /*
+             * AUDIO:
+             * manually uploaded artwork.
+             *
+             * PDF:
+             * ResourceMediaPreview now reads
+             * media.thumbnailUrl directly.
+             */
+            thumbnailUrl={
+              item.type === "AUDIO"
+                ? thumbnailUrl
+                : undefined
+            }
             title={
               item.title ||
               item.fileName ||
@@ -1605,7 +2079,7 @@ function MediaEditor({
 }
 
 /* ========================================================================== */
-/* Draft Preview                                                             */
+/* Draft Preview                                                              */
 /* ========================================================================== */
 
 function PreviewDialog({
@@ -1625,14 +2099,6 @@ function PreviewDialog({
   media: MediaItem[];
   onClose: () => void;
 }) {
-  /*
-   * Important:
-   *
-   * Include localPreviewUrl as well as url.
-   *
-   * This means a newly selected file can be previewed
-   * before Cloudinary has finished processing it.
-   */
   const attachedMedia =
     media.filter(
       (item) =>
@@ -1715,7 +2181,6 @@ function PreviewDialog({
                   <PreviewMedia
                     key={index}
                     media={item}
-                    thumbnailUrl={getThumbnailUrl(media)}
                   />
                 ),
               )}
@@ -1733,11 +2198,21 @@ function PreviewDialog({
 
 function PreviewMedia({
   media,
-  thumbnailUrl,
 }: {
   media: MediaItem;
-  thumbnailUrl?: string;
 }) {
+  /*
+   * AUDIO uses its manually uploaded artwork.
+   *
+   * PDF uses media.thumbnailUrl directly inside
+   * ResourceMediaPreview -> PdfPreview.
+   */
+  const thumbnailUrl =
+    media.type === "AUDIO"
+      ? media.thumbnail?.url ||
+        media.thumbnail?.localPreviewUrl
+      : undefined;
+
   return (
     <div>
       {media.title && (

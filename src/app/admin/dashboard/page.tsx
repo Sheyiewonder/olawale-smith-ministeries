@@ -335,21 +335,44 @@ export default function AdminDashboardPage() {
                 .map((resource) => {
                   const category =
                     resource.categories?.[0]?.category;
-                  const youtube = resource.media?.find(
-                    (media) =>
-                      media.provider === "YOUTUBE" &&
-                      media.type === "VIDEO",
-                  );
+
+                  const youtube =
+                    resource.media?.find(
+                      (media) =>
+                        media.provider === "YOUTUBE" &&
+                        media.type === "VIDEO",
+                    );
+
                   const videoId =
                     youtube?.externalId ??
                     youtube?.url?.match(
                       /(?:v=|youtu\.be\/|shorts\/|embed\/)([^?&/]+)/,
                     )?.[1];
+
+                  /*
+                   * Thumbnail priority:
+                   *
+                   * 1. Explicit resource thumbnail
+                   * 2. Stored media thumbnail
+                   * 3. YouTube thumbnail
+                   *
+                   * Media thumbnailUrl is now the canonical
+                   * source for generated PDF thumbnails and
+                   * custom audio artwork.
+                   */
+                  const mediaThumbnail =
+                    resource.media?.find(
+                      (media) =>
+                        Boolean(media.thumbnailUrl),
+                    )?.thumbnailUrl;
+
                   const thumbnailUrl =
                     resource.thumbnail?.url ||
+                    mediaThumbnail ||
                     (videoId
                       ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
                       : undefined);
+
                   const ResourceIcon =
                     resource.type === "SERMON"
                       ? Mic2
@@ -382,39 +405,39 @@ export default function AdminDashboardPage() {
                         </div>
 
                         <div className="min-w-0">
-                        <p className="font-medium">
-                          {resource.title}
-                        </p>
+                          <p className="font-medium">
+                            {resource.title}
+                          </p>
 
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-charcoal/40">
-                          {category && (
-                            <>
-                              <span className="text-bronze">
-                                {category.name}
-                              </span>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-charcoal/40">
+                            {category && (
+                              <>
+                                <span className="text-bronze">
+                                  {category.name}
+                                </span>
 
-                              <span className="h-1 w-1 rounded-full bg-charcoal/20" />
-                            </>
-                          )}
+                                <span className="h-1 w-1 rounded-full bg-charcoal/20" />
+                              </>
+                            )}
 
-                          <span>
-                            {resource.type}
-                          </span>
+                            <span>
+                              {resource.type}
+                            </span>
 
-                          <span className="h-1 w-1 rounded-full bg-charcoal/20" />
+                            <span className="h-1 w-1 rounded-full bg-charcoal/20" />
 
-                          <span
-                            className={
-                              resource.published
-                                ? "text-green-600"
-                                : "text-charcoal/40"
-                            }
-                          >
-                            {resource.published
-                              ? "Published"
-                              : "Draft"}
-                          </span>
-                        </div>
+                            <span
+                              className={
+                                resource.published
+                                  ? "text-green-600"
+                                  : "text-charcoal/40"
+                              }
+                            >
+                              {resource.published
+                                ? "Published"
+                                : "Draft"}
+                            </span>
+                          </div>
                         </div>
                       </div>
 

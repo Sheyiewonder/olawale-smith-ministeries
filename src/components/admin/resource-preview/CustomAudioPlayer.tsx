@@ -2,6 +2,7 @@
 
 import {
   Download,
+  ChevronDown,
   Pause,
   Play,
   RotateCcw,
@@ -46,28 +47,10 @@ export default function CustomAudioPlayer({
 
     if (!audio) return;
 
-    const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-    };
-
-    const handleLoadedMetadata = () => {
-      setDuration(audio.duration || 0);
-    };
-
     const handleEnded = () => {
       setPlaying(false);
       setCurrentTime(0);
     };
-
-    audio.addEventListener(
-      "timeupdate",
-      handleTimeUpdate,
-    );
-
-    audio.addEventListener(
-      "loadedmetadata",
-      handleLoadedMetadata,
-    );
 
     audio.addEventListener(
       "ended",
@@ -75,16 +58,6 @@ export default function CustomAudioPlayer({
     );
 
     return () => {
-      audio.removeEventListener(
-        "timeupdate",
-        handleTimeUpdate,
-      );
-
-      audio.removeEventListener(
-        "loadedmetadata",
-        handleLoadedMetadata,
-      );
-
       audio.removeEventListener(
         "ended",
         handleEnded,
@@ -158,6 +131,16 @@ export default function CustomAudioPlayer({
     setPlaybackRate(rate);
   };
 
+  function downloadAudio() {
+    const link = document.createElement("a");
+    link.href = src;
+    link.download = title || "audio";
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   const formatTime = (seconds: number) => {
     if (!Number.isFinite(seconds)) {
       return "0:00";
@@ -201,15 +184,21 @@ export default function CustomAudioPlayer({
         onLoadedMetadata={(event) => {
           setDuration(event.currentTarget.duration || 0);
         }}
+        onDurationChange={(event) => {
+          setDuration(event.currentTarget.duration || 0);
+        }}
+        onTimeUpdate={(event) => {
+          setCurrentTime(event.currentTarget.currentTime);
+        }}
       />
 
       {!thumbnailUrl && (
-        <div className="pointer-events-none absolute inset-x-0 top-8 flex items-center justify-center text-bronze/45 sm:top-10">
-          {fallbackIcon || <Volume2 className="h-28 w-28" strokeWidth={0.7} />}
+        <div className="pointer-events-none absolute inset-x-0 top-5 flex items-center justify-center text-bronze/45 sm:top-8">
+          {fallbackIcon || <Volume2 className="h-16 w-16 sm:h-24 sm:w-24" strokeWidth={0.7} />}
         </div>
       )}
 
-      <div className="relative z-10 mx-auto w-full max-w-sm pb-1 text-center">
+      <div className={`relative z-10 mx-auto w-full max-w-sm pb-1 text-center ${!thumbnailUrl ? "pt-20 sm:pt-24" : ""}`}>
         <p className={`truncate text-base font-semibold ${hasThumbnail ? "text-gold" : "text-charcoal"}`}>
           {title || "Audio preview"}
         </p>
@@ -255,11 +244,11 @@ export default function CustomAudioPlayer({
         </div>
 
         <div className="mt-6 flex items-center justify-center gap-3">
-          <label className={`inline-flex h-8 items-center rounded-full border ${borderColor} px-2 text-[9px] font-semibold ${mutedTextColor}`}>
+          <label className={`relative inline-flex h-8 w-8 items-center justify-center rounded-full border ${borderColor} text-[9px] font-semibold ${mutedTextColor}`}>
             <select
               value={playbackRate}
               onChange={handlePlaybackRate}
-              className="h-full bg-transparent text-[9px] outline-none"
+              className="absolute inset-0 z-10 h-full w-full cursor-pointer appearance-none bg-transparent text-center text-[9px] text-transparent outline-none"
               aria-label="Playback speed"
             >
               {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
@@ -268,6 +257,10 @@ export default function CustomAudioPlayer({
                 </option>
               ))}
             </select>
+            <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-0.5">
+              <span>{playbackRate}x</span>
+              <ChevronDown className="h-2.5 w-2.5" />
+            </span>
           </label>
 
           <button
@@ -305,15 +298,15 @@ export default function CustomAudioPlayer({
             <RotateCw className="h-4 w-4 transition-transform duration-300 group-hover:rotate-12" />
           </button>
 
-          <a
-            href={src}
-            download
+          <button
+            type="button"
+            onClick={downloadAudio}
             className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${borderColor} ${mutedTextColor} transition hover:scale-110 hover:border-bronze hover:text-bronze`}
             aria-label="Download audio"
             title="Download audio"
           >
             <Download className="h-3.5 w-3.5" />
-          </a>
+          </button>
         </div>
 
       </div>
