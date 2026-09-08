@@ -3,10 +3,33 @@
 import {
   Download,
   ExternalLink,
-  Loader2,
   FileText,
+  Loader2,
+  Minus,
+  Plus,
+  RotateCcw,
 } from "lucide-react";
-import { useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  getDocument,
+  GlobalWorkerOptions,
+} from "pdfjs-dist";
+import type {
+  PDFDocumentProxy,
+  PDFPageProxy,
+} from "pdfjs-dist";
+
+import "pdfjs-dist/web/pdf_viewer.css";
+
+GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 interface PdfPreviewProps {
   src: string;
@@ -14,14 +37,11 @@ interface PdfPreviewProps {
   thumbnailUrl?: string | null;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
+interface RenderedPage {
+  pageNumber: number;
+  page: PDFPageProxy;
+}
 
-/**
- * Sanitize the resource title so it can safely be
- * used as a downloaded filename.
- */
 function sanitizeFilenameTitle(title: string): string {
   return title
     .trim()
@@ -31,20 +51,6 @@ function sanitizeFilenameTitle(title: string): string {
     .slice(0, 180);
 }
 
-/**
- * Get the download filename.
- *
- * IMPORTANT:
- *
- * The resource title is the ONLY source used for the
- * downloaded filename.
- *
- * We deliberately do NOT:
- * - inspect the Cloudinary URL
- * - inspect the uploaded file name
- * - use the PDF document title
- * - use getActualFileTitle()
- */
 function getDownloadFilename(title?: string): string {
   const sanitizedTitle = sanitizeFilenameTitle(
     title?.trim() || "",
@@ -54,34 +60,8 @@ function getDownloadFilename(title?: string): string {
     return `${sanitizedTitle}.pdf`;
   }
 
-  /*
-   * Last-resort filename when no resource title
-   * was supplied.
-   */
   return "document.pdf";
 }
-
-/**
- * Resolve the display title used throughout
- * the PDF preview.
- *
- * This is ONLY for the UI.
- *
- * It does NOT control the downloaded filename.
- */
-function getActualFileTitle(title?: string): string {
-  const explicitTitle = title?.trim();
-
-  if (explicitTitle) {
-    return explicitTitle;
-  }
-
-  return "PDF document";
-}
-
-/* -------------------------------------------------------------------------- */
-/* Component                                                                  */
-/* -------------------------------------------------------------------------- */
 
 export default function PdfPreview({
   src,
@@ -91,68 +71,563 @@ export default function PdfPreview({
   const [downloading, setDownloading] =
     useState(false);
 
-  /*
-   * The thumbnail URL is intentionally retained in
-   * the component API for compatibility with existing
-   * resource data and callers.
-   *
-   * IMPORTANT:
-   *
-   * The thumbnail is NOT used as the primary PDF
-   * preview anymore.
-   *
-   * The complete PDF is rendered directly through
-   * the browser's native PDF viewer immediately.
-   */
-  const [thumbnailFailed, setThumbnailFailed] =
-    useState(false);
-
-  const [previewFailed, setPreviewFailed] =
-    useState(false);
-
   const [downloadError, setDownloadError] =
     useState(false);
 
-  /**
-   * Display title for the preview UI.
-   *
-   * NOTE:
-   * This is separate from the download filename.
-   */
-  const actualFileTitle =
-    getActualFileTitle(title);
+  const [loading, setLoading] =
+    useState(true);
+
+  const [previewError, setPreviewError] =
+    useState<string | null>(null);
+
+  const [pageCount, setPageCount] =
+    useState(0);
+
+  const [currentPage, setCurrentPage] =
+    useState(1);
+
+  const [zoom, setZoom] =
+    useState(1);
+
+  const [documentReady, setDocumentReady] =
+    useState(false);
+
+  const [pages, setPages] =
+    useState<RenderedPage[]>([]);
+
+  const [containerWidth, setContainerWidth] =
+    useState(0);
 
   /*
-   * Keep the thumbnail information available without
-   * allowing it to replace the actual PDF document.
+   * References to the individual page wrappers.
    *
-   * This prevents older callers that still provide a
-   * thumbnailUrl from changing the preview behavior.
-   *
-   * The thumbnail is metadata for the resource and is
-   * intentionally not rendered over the PDF.
+   * React owns these elements. We only use the refs
+   * to measure their offsetTop for page tracking.
    */
-  const hasThumbnail =
-    Boolean(thumbnailUrl) &&
-    !thumbnailFailed;
+  const pageHostRefs =
+    useRef<Record<number, HTMLDivElement | null>>(
+      {},
+    );
 
   /*
-   * The values above are intentionally kept because
-   * thumbnailUrl remains part of the PdfPreview contract.
-   *
-   * The actual PDF preview always takes priority.
-   *
-   * This means:
-   *
-   * - PDF thumbnail exists  -> show complete PDF
-   * - PDF thumbnail missing -> show complete PDF
-   * - PDF thumbnail fails   -> show complete PDF
-   *
-   * The thumbnail must never delay or replace the
-   * browser PDF viewer.
+   * Reference to the actual scrolling container.
    */
-  void hasThumbnail;
-  void setThumbnailFailed;
+  const canvasContainerRef =
+    useRef<HTMLDivElement | null>(null);
+
+  /*
+   * References to each page's canvas.
+   */
+  const canvasRefs =
+    useRef<Record<number, HTMLCanvasElement | null>>(
+      {},
+    );
+
+  const pdfDocumentRef =
+    useRef<PDFDocumentProxy | null>(null);
+
+  /*
+   * thumbnailUrl is retained in the component API
+   * because other parts of the application may pass it.
+   *
+   * The actual PDF preview is rendered directly from src.
+   */
+  void thumbnailUrl;
+
+  /* ------------------------------------------------------------------------ */
+  /* Measure PDF container width                                              */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    const element =
+      canvasContainerRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    const updateWidth = () => {
+      setContainerWidth(
+        element.clientWidth,
+      );
+    };
+
+    updateWidth();
+
+    const resizeObserver =
+      new ResizeObserver(updateWidth);
+
+    resizeObserver.observe(element);
+
+    window.addEventListener(
+      "resize",
+      updateWidth,
+    );
+
+    return () => {
+      resizeObserver.disconnect();
+
+      window.removeEventListener(
+        "resize",
+        updateWidth,
+      );
+    };
+  }, [pages.length]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Load PDF                                                                 */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPdf() {
+      if (!src) {
+        setLoading(false);
+        setDocumentReady(false);
+        setPages([]);
+        setPageCount(0);
+        return;
+      }
+
+      setLoading(true);
+      setPreviewError(null);
+      setDocumentReady(false);
+      setPageCount(0);
+      setCurrentPage(1);
+      setPages([]);
+      setContainerWidth(0);
+
+      pdfDocumentRef.current = null;
+
+      pageHostRefs.current = {};
+      canvasRefs.current = {};
+
+      try {
+        const loadingTask = getDocument({
+          url: src,
+          withCredentials: false,
+        });
+
+        const pdf =
+          await loadingTask.promise;
+
+        if (cancelled) {
+          return;
+        }
+
+        pdfDocumentRef.current = pdf;
+
+        setPageCount(pdf.numPages);
+        setCurrentPage(1);
+
+        const loadedPages: RenderedPage[] =
+          [];
+
+        for (
+          let pageNumber = 1;
+          pageNumber <= pdf.numPages;
+          pageNumber += 1
+        ) {
+          if (cancelled) {
+            return;
+          }
+
+          const page =
+            await pdf.getPage(pageNumber);
+
+          if (cancelled) {
+            return;
+          }
+
+          loadedPages.push({
+            pageNumber,
+            page,
+          });
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setPages(loadedPages);
+        setDocumentReady(true);
+        setLoading(false);
+      } catch (error) {
+        console.error(
+          "PDF preview failed:",
+          error,
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setLoading(false);
+        setDocumentReady(false);
+        setPages([]);
+
+        setPreviewError(
+          "The PDF could not be loaded for preview.",
+        );
+      }
+    }
+
+    void loadPdf();
+
+    return () => {
+      cancelled = true;
+
+      pdfDocumentRef.current = null;
+
+      pageHostRefs.current = {};
+      canvasRefs.current = {};
+    };
+  }, [src]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Calculate available width                                                */
+  /* ------------------------------------------------------------------------ */
+
+  const getAvailableWidth =
+    useCallback(() => {
+      if (containerWidth <= 0) {
+        return 0;
+      }
+
+      const horizontalPadding =
+        window.matchMedia(
+          "(min-width: 640px)",
+        ).matches
+          ? 48
+          : 24;
+
+      return Math.max(
+        containerWidth -
+          horizontalPadding,
+        280,
+      );
+    }, [containerWidth]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Render PDF pages                                                         */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (
+      !documentReady ||
+      pages.length === 0 ||
+      containerWidth <= 0
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const availableWidth =
+      getAvailableWidth();
+
+    if (availableWidth <= 0) {
+      return;
+    }
+
+    async function renderPages() {
+      for (const {
+        pageNumber,
+        page,
+      } of pages) {
+        if (cancelled) {
+          return;
+        }
+
+        const host =
+          pageHostRefs.current[
+            pageNumber
+          ];
+
+        if (!host) {
+          continue;
+        }
+
+        const canvas =
+          canvasRefs.current[
+            pageNumber
+          ];
+
+        if (!canvas) {
+          continue;
+        }
+
+        const context =
+          canvas.getContext("2d", {
+            alpha: false,
+          });
+
+        if (!context) {
+          continue;
+        }
+
+        context.clearRect(
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
+
+        const baseViewport =
+          page.getViewport({
+            scale: 1,
+          });
+
+        if (
+          !Number.isFinite(
+            baseViewport.width,
+          ) ||
+          baseViewport.width <= 0
+        ) {
+          continue;
+        }
+
+        const widthScale =
+          availableWidth /
+          baseViewport.width;
+
+        const scale =
+          Math.max(widthScale, 0.5) *
+          zoom;
+
+        const viewport =
+          page.getViewport({
+            scale,
+          });
+
+        const devicePixelRatio =
+          Math.min(
+            window.devicePixelRatio || 1,
+            2,
+          );
+
+        canvas.width = Math.max(
+          1,
+          Math.floor(
+            viewport.width *
+              devicePixelRatio,
+          ),
+        );
+
+        canvas.height = Math.max(
+          1,
+          Math.floor(
+            viewport.height *
+              devicePixelRatio,
+          ),
+        );
+
+        canvas.style.width =
+          `${viewport.width}px`;
+
+        canvas.style.height =
+          `${viewport.height}px`;
+
+        context.setTransform(
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+        );
+
+        try {
+          const renderContext = {
+            canvas,
+            canvasContext: context,
+            viewport,
+            transform:
+              devicePixelRatio !== 1
+                ? [
+                    devicePixelRatio,
+                    0,
+                    0,
+                    devicePixelRatio,
+                    0,
+                    0,
+                  ]
+                : undefined,
+          };
+
+          await page.render(
+            renderContext,
+          ).promise;
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          console.error(
+            `Failed to render PDF page ${pageNumber}:`,
+            error,
+          );
+        }
+      }
+    }
+
+    void renderPages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    documentReady,
+    pages,
+    zoom,
+    containerWidth,
+    getAvailableWidth,
+  ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Track current page                                                       */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (
+      !documentReady ||
+      pages.length === 0
+    ) {
+      return;
+    }
+
+    /*
+     * Capture the element once for event registration.
+     *
+     * We do NOT use this variable inside the callback.
+     * This avoids TypeScript's nullability issue caused
+     * by closures running after the effect has executed.
+     */
+    const scrollElement =
+      canvasContainerRef.current;
+
+    if (!scrollElement) {
+      return;
+    }
+
+    let ticking = false;
+
+    function updateCurrentPage() {
+      ticking = false;
+
+      /*
+       * Read the ref directly.
+       *
+       * The fallback keeps this safe even if the element
+       * has been removed during a React update.
+       */
+      const scrollTop =
+        canvasContainerRef.current?.scrollTop ??
+        0;
+
+      const scrollPosition =
+        scrollTop + 24;
+
+      let closestPage = 1;
+
+      let closestDistance =
+        Number.POSITIVE_INFINITY;
+
+      for (const { pageNumber } of pages) {
+        const pageElement =
+          pageHostRefs.current[
+            pageNumber
+          ];
+
+        if (!pageElement) {
+          continue;
+        }
+
+        const distance = Math.abs(
+          pageElement.offsetTop -
+            scrollPosition,
+        );
+
+        if (
+          distance <
+          closestDistance
+        ) {
+          closestDistance = distance;
+          closestPage = pageNumber;
+        }
+      }
+
+      setCurrentPage(
+        (previousPage) =>
+          previousPage === closestPage
+            ? previousPage
+            : closestPage,
+      );
+    }
+
+    function handleScroll() {
+      if (ticking) {
+        return;
+      }
+
+      ticking = true;
+
+      window.requestAnimationFrame(
+        updateCurrentPage,
+      );
+    }
+
+    scrollElement.addEventListener(
+      "scroll",
+      handleScroll,
+      {
+        passive: true,
+      },
+    );
+
+    updateCurrentPage();
+
+    return () => {
+      scrollElement.removeEventListener(
+        "scroll",
+        handleScroll,
+      );
+    };
+  }, [
+    documentReady,
+    pages,
+  ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Zoom controls                                                            */
+  /* ------------------------------------------------------------------------ */
+
+  function zoomIn() {
+    setZoom((value) =>
+      Math.min(
+        Number(
+          (value + 0.1).toFixed(2),
+        ),
+        2.5,
+      ),
+    );
+  }
+
+  function zoomOut() {
+    setZoom((value) =>
+      Math.max(
+        Number(
+          (value - 0.1).toFixed(2),
+        ),
+        0.6,
+      ),
+    );
+  }
+
+  function resetZoom() {
+    setZoom(1);
+  }
 
   /* ------------------------------------------------------------------------ */
   /* Download PDF                                                             */
@@ -167,13 +642,6 @@ export default function PdfPreview({
       setDownloading(true);
       setDownloadError(false);
 
-      /*
-       * Fetch the actual PDF as a Blob.
-       *
-       * We intentionally do NOT navigate directly to
-       * the Cloudinary URL because Cloudinary/browser
-       * handling can use the original uploaded filename.
-       */
       const response = await fetch(src, {
         method: "GET",
         credentials: "omit",
@@ -185,7 +653,8 @@ export default function PdfPreview({
         );
       }
 
-      const blob = await response.blob();
+      const blob =
+        await response.blob();
 
       if (!blob.size) {
         throw new Error(
@@ -199,19 +668,6 @@ export default function PdfPreview({
       const link =
         document.createElement("a");
 
-      /*
-       * IMPORTANT:
-       *
-       * Use the ORIGINAL resource title directly.
-       *
-       * Example:
-       *
-       * title = "Walking in Purpose"
-       *
-       * download = "Walking in Purpose.pdf"
-       *
-       * We do NOT use actualFileTitle here.
-       */
       link.download =
         getDownloadFilename(title);
 
@@ -224,10 +680,6 @@ export default function PdfPreview({
 
       link.remove();
 
-      /*
-       * Give the browser enough time to begin
-       * the download before releasing the Blob URL.
-       */
       window.setTimeout(() => {
         URL.revokeObjectURL(objectUrl);
       }, 2000);
@@ -279,103 +731,151 @@ export default function PdfPreview({
     );
   }
 
-  /*
-   * IMPORTANT:
-   *
-   * We deliberately do NOT use the PDF thumbnail
-   * as the rendered preview.
-   *
-   * The browser PDF viewer is rendered immediately
-   * regardless of whether thumbnailUrl exists.
-   *
-   * This allows the user to:
-   *
-   * - see the actual PDF
-   * - scroll through all pages
-   * - use the browser's native PDF controls
-   * - read the document without waiting for a
-   *   separate thumbnail request
-   *
-   * thumbnailUrl is therefore retained only for
-   * compatibility with existing resource data.
-   */
-
   /* ------------------------------------------------------------------------ */
   /* Render                                                                   */
   /* ------------------------------------------------------------------------ */
 
   return (
     <div className="overflow-hidden rounded-2xl border bg-muted/20 shadow-sm">
-      <div className="relative min-h-[420px] w-full">
-        {/* ------------------------------------------------------------------ */}
-        {/* Complete PDF Browser Preview                                       */}
-        {/* ------------------------------------------------------------------ */}
+      <div className="relative w-full">
+        {/* ---------------------------------------------------------------- */}
+        {/* Toolbar                                                          */}
+        {/* ---------------------------------------------------------------- */}
 
-        {!previewFailed ? (
-          <div className="relative aspect-square w-full overflow-hidden">
-            <iframe
-              src={src}
-              title={`${actualFileTitle} PDF preview`}
-              className="h-full w-full border-0"
-              onError={() => {
-                setPreviewFailed(true);
-              }}
-            />
-
-            {/* -------------------------------------------------------------- */}
-            {/* PDF Badge                                                       */}
-            {/* -------------------------------------------------------------- */}
-
-            <div className="absolute left-4 top-4 z-20 inline-flex items-center gap-2 rounded-full bg-charcoal px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg sm:left-7 sm:top-7">
+        <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-black/5 bg-background/90 px-4 py-3 backdrop-blur-xl sm:px-7">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="inline-flex shrink-0 items-center gap-2 rounded-full bg-bronze px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg">
               <FileText size={13} />
+
               PDF
             </div>
 
-            {/* -------------------------------------------------------------- */}
-            {/* Actions                                                         */}
-            {/* -------------------------------------------------------------- */}
+            {pageCount > 0 && (
+              <span className="truncate text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                Page {currentPage} of{" "}
+                {pageCount}
+              </span>
+            )}
+          </div>
 
-            <div className="absolute right-4 top-4 z-20 flex flex-wrap justify-end gap-2 sm:right-7 sm:top-7">
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Desktop zoom controls */}
+
+            <div className="hidden items-center gap-1 rounded-full border border-bronze/30 bg-white/80 p-1 shadow-sm sm:flex">
               <button
                 type="button"
-                onClick={openPdf}
-                className="inline-flex items-center gap-2 rounded-full bg-charcoal px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze sm:px-4"
+                onClick={zoomOut}
+                disabled={zoom <= 0.6}
+                aria-label="Zoom out"
+                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <ExternalLink size={14} />
-
-                <span className="hidden sm:inline">
-                  Open
-                </span>
+                <Minus size={14} />
               </button>
 
               <button
                 type="button"
-                onClick={downloadPdf}
-                disabled={downloading}
-                className="inline-flex items-center gap-2 rounded-full bg-charcoal px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
+                onClick={resetZoom}
+                aria-label="Reset zoom"
+                className="flex h-8 min-w-12 items-center justify-center rounded-full px-2 text-[10px] font-semibold"
               >
-                {downloading ? (
-                  <Loader2
-                    size={14}
-                    className="animate-spin"
-                  />
-                ) : (
-                  <Download size={14} />
+                {Math.round(
+                  zoom * 100,
                 )}
+                %
+              </button>
 
-                <span>
-                  {downloading
-                    ? "Downloading..."
-                    : "Download PDF"}
-                </span>
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={zoom >= 2.5}
+                aria-label="Zoom in"
+                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus size={14} />
               </button>
             </div>
-          </div>
-        ) : (
-          /* --------------------------------------------------------------- */
-          /* Browser PDF Preview Fallback                                    */
-          /* --------------------------------------------------------------- */
 
+            {/* Mobile reset */}
+
+            <button
+              type="button"
+              onClick={resetZoom}
+              aria-label="Reset zoom"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white/80 shadow-sm transition hover:border-bronze hover:text-bronze sm:hidden"
+            >
+              <RotateCcw size={14} />
+            </button>
+
+            {/* Open */}
+
+            <button
+              type="button"
+              onClick={openPdf}
+              className="inline-flex items-center gap-2 rounded-full bg-bronze px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze sm:px-4"
+            >
+              <ExternalLink size={14} />
+
+              <span className="hidden sm:inline">
+                Open
+              </span>
+            </button>
+
+            {/* Download */}
+
+            <button
+              type="button"
+              onClick={downloadPdf}
+              disabled={downloading}
+              className="inline-flex items-center gap-2 rounded-full bg-bronze px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
+            >
+              {downloading ? (
+                <Loader2
+                  size={14}
+                  className="animate-spin"
+                />
+              ) : (
+                <Download size={14} />
+              )}
+
+              <span className="hidden sm:inline">
+                {downloading
+                  ? "Downloading..."
+                  : "Download PDF"}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Loading state                                                    */}
+        {/* ---------------------------------------------------------------- */}
+
+        {loading && (
+          <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+              <Loader2
+                size={24}
+                className="animate-spin text-bronze"
+              />
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold">
+                Loading PDF
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Preparing the complete document…
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Preview error                                                    */}
+        {/* ---------------------------------------------------------------- */}
+
+        {!loading && previewError && (
           <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
               <FileText size={24} />
@@ -386,10 +886,8 @@ export default function PdfPreview({
                 PDF preview unavailable
               </p>
 
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                The PDF is available, but your
-                browser could not display the
-                preview.
+              <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+                {previewError}
               </p>
             </div>
 
@@ -397,9 +895,10 @@ export default function PdfPreview({
               <button
                 type="button"
                 onClick={openPdf}
-                className="inline-flex items-center gap-2 rounded-full bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory transition hover:bg-bronze"
+                className="inline-flex items-center gap-2 rounded-full bg-bronze px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory transition hover:bg-bronze"
               >
                 <ExternalLink size={14} />
+
                 Open PDF
               </button>
 
@@ -407,7 +906,7 @@ export default function PdfPreview({
                 type="button"
                 onClick={downloadPdf}
                 disabled={downloading}
-                className="inline-flex items-center gap-2 rounded-full border border-charcoal/10 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full border border-bronze/30 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {downloading ? (
                   <Loader2
@@ -426,63 +925,99 @@ export default function PdfPreview({
           </div>
         )}
 
-        {/* ------------------------------------------------------------------ */}
-        {/* PDF Preview Actions                                                */}
-        {/* ------------------------------------------------------------------ */}
+        {/* ---------------------------------------------------------------- */}
+        {/* PDF pages                                                        */}
+        {/* ---------------------------------------------------------------- */}
 
-        {!previewFailed && (
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-24">
-            <div className="absolute left-4 top-4 pointer-events-auto sm:left-7 sm:top-7">
-              <div className="inline-flex items-center gap-2 rounded-full bg-charcoal px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg opacity-0">
-                <FileText size={13} />
-                PDF
+        {!loading &&
+          !previewError &&
+          documentReady && (
+            <div className="relative">
+              <div
+                ref={canvasContainerRef}
+                className="max-h-[75vh] overflow-y-auto overscroll-contain bg-muted/30 px-3 py-5 sm:px-6 sm:py-7"
+                style={{
+                  WebkitOverflowScrolling:
+                    "touch",
+                }}
+              >
+                {pages.map(
+                  ({
+                    pageNumber,
+                  }) => (
+                    <div
+                      key={pageNumber}
+                      ref={(element) => {
+                        pageHostRefs.current[
+                          pageNumber
+                        ] = element;
+                      }}
+                      data-page={pageNumber}
+                      className="mb-5 flex w-full justify-center last:mb-0"
+                    >
+                      <canvas
+                        ref={(element) => {
+                          canvasRefs.current[
+                            pageNumber
+                          ] = element;
+                        }}
+                        className="block max-w-full rounded-sm bg-white shadow-sm"
+                        aria-label={`PDF page ${pageNumber}`}
+                      />
+                    </div>
+                  ),
+                )}
               </div>
             </div>
+          )}
 
-            <div className="absolute right-4 top-4 flex flex-wrap justify-end gap-2 pointer-events-auto sm:right-7 sm:top-7">
+        {/* ---------------------------------------------------------------- */}
+        {/* Mobile zoom controls                                             */}
+        {/* ---------------------------------------------------------------- */}
+
+        {!loading &&
+          !previewError &&
+          documentReady && (
+            <div className="flex items-center justify-center gap-2 border-t border-black/5 bg-background/90 px-4 py-3 backdrop-blur-xl sm:hidden">
               <button
                 type="button"
-                onClick={openPdf}
-                className="inline-flex items-center gap-2 rounded-full bg-charcoal px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze sm:px-4"
+                onClick={zoomOut}
+                disabled={zoom <= 0.6}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Zoom out"
               >
-                <ExternalLink size={14} />
-
-                <span className="hidden sm:inline">
-                  Open
-                </span>
+                <Minus size={14} />
               </button>
 
               <button
                 type="button"
-                onClick={downloadPdf}
-                disabled={downloading}
-                className="inline-flex items-center gap-2 rounded-full bg-charcoal px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
+                onClick={resetZoom}
+                className="flex h-9 min-w-16 items-center justify-center rounded-full border border-bronze/30 bg-white px-3 text-[10px] font-semibold shadow-sm"
               >
-                {downloading ? (
-                  <Loader2
-                    size={14}
-                    className="animate-spin"
-                  />
-                ) : (
-                  <Download size={14} />
+                {Math.round(
+                  zoom * 100,
                 )}
+                %
+              </button>
 
-                <span>
-                  {downloading
-                    ? "Downloading..."
-                    : "Download PDF"}
-                </span>
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={zoom >= 2.5}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Zoom in"
+              >
+                <Plus size={14} />
               </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ------------------------------------------------------------------ */}
-        {/* Download Error                                                     */}
-        {/* ------------------------------------------------------------------ */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Download error                                                  */}
+        {/* ---------------------------------------------------------------- */}
 
         {downloadError && (
-          <div className="absolute bottom-4 left-4 right-4 z-30 rounded-xl border border-destructive/20 bg-background/95 p-3 text-center shadow-sm backdrop-blur">
+          <div className="absolute bottom-4 left-4 right-4 z-40 rounded-xl border border-destructive/20 bg-background/95 p-3 text-center shadow-sm backdrop-blur">
             <p className="text-xs font-medium text-destructive">
               Unable to download this PDF.
             </p>
@@ -496,7 +1031,7 @@ export default function PdfPreview({
               type="button"
               onClick={() => {
                 setDownloadError(false);
-                downloadPdf();
+                void downloadPdf();
               }}
               disabled={downloading}
               className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] underline underline-offset-4 disabled:opacity-50"
