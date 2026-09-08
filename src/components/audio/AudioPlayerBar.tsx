@@ -14,7 +14,14 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 
 import { useAudioPlayer } from "./AudioPlayerProvider";
 
@@ -64,8 +71,13 @@ export default function AudioPlayerBar() {
   const [isVolumeOpen, setIsVolumeOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
+  const progressSliderRef = useRef<HTMLDivElement>(null);
+  const mobileProgressSliderRef = useRef<HTMLDivElement>(null);
+  const desktopVolumeSliderRef = useRef<HTMLDivElement>(null);
+  const mobileVolumeSliderRef = useRef<HTMLDivElement>(null);
+
   /* ------------------------------------------------------------------------ */
-  /* Reset volume popup when track changes                                   */
+  /* Reset volume popup when track changes                                    */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -112,6 +124,243 @@ export default function AudioPlayerBar() {
   const volumeProgress = effectiveVolume * 100;
 
   /* ------------------------------------------------------------------------ */
+  /* Progress interaction                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  const updateProgressFromPointer = (
+    event: PointerEvent<HTMLDivElement>,
+    slider: HTMLDivElement,
+  ) => {
+    if (!duration) {
+      return;
+    }
+
+    const rect = slider.getBoundingClientRect();
+
+    if (!rect.width) {
+      return;
+    }
+
+    const relativeX = event.clientX - rect.left;
+
+    const percentage = Math.min(
+      1,
+      Math.max(0, relativeX / rect.width),
+    );
+
+    seek(percentage * duration);
+  };
+
+  const handleProgressPointerDown = (
+    event: PointerEvent<HTMLDivElement>,
+    sliderRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    const slider = sliderRef.current;
+
+    if (!slider || !duration) {
+      return;
+    }
+
+    event.preventDefault();
+
+    slider.setPointerCapture(event.pointerId);
+
+    updateProgressFromPointer(event, slider);
+  };
+
+  const handleProgressPointerMove = (
+    event: PointerEvent<HTMLDivElement>,
+    sliderRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    const slider = sliderRef.current;
+
+    if (!slider || !duration) {
+      return;
+    }
+
+    if (!slider.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+
+    event.preventDefault();
+
+    updateProgressFromPointer(event, slider);
+  };
+
+  const handleProgressPointerUp = (
+    event: PointerEvent<HTMLDivElement>,
+    sliderRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    const slider = sliderRef.current;
+
+    if (!slider) {
+      return;
+    }
+
+    if (slider.hasPointerCapture(event.pointerId)) {
+      slider.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* Progress keyboard interaction                                            */
+  /* ------------------------------------------------------------------------ */
+
+  const handleProgressKeyDown = (
+    event: KeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (!duration) {
+      return;
+    }
+
+    const step = Math.max(1, duration * 0.01);
+
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+        event.preventDefault();
+        seek(Math.max(0, currentTime - step));
+        break;
+
+      case "ArrowRight":
+      case "ArrowUp":
+        event.preventDefault();
+        seek(Math.min(duration, currentTime + step));
+        break;
+
+      case "Home":
+        event.preventDefault();
+        seek(0);
+        break;
+
+      case "End":
+        event.preventDefault();
+        seek(duration);
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* Volume interaction                                                        */
+  /* ------------------------------------------------------------------------ */
+
+  const updateVolumeFromPointer = (
+    event: PointerEvent<HTMLDivElement>,
+    slider: HTMLDivElement,
+  ) => {
+    const rect = slider.getBoundingClientRect();
+
+    if (!rect.height) {
+      return;
+    }
+
+    /*
+     * The volume slider runs vertically from bottom (0)
+     * to top (1), so the calculation is inverted.
+     */
+
+    const relativeY = event.clientY - rect.top;
+
+    const percentage = Math.min(
+      1,
+      Math.max(0, 1 - relativeY / rect.height),
+    );
+
+    setVolume(percentage);
+  };
+
+  const handleVolumePointerDown = (
+    event: PointerEvent<HTMLDivElement>,
+    sliderRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    const slider = sliderRef.current;
+
+    if (!slider) {
+      return;
+    }
+
+    event.preventDefault();
+
+    slider.setPointerCapture(event.pointerId);
+
+    updateVolumeFromPointer(event, slider);
+  };
+
+  const handleVolumePointerMove = (
+    event: PointerEvent<HTMLDivElement>,
+    sliderRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    const slider = sliderRef.current;
+
+    if (!slider) {
+      return;
+    }
+
+    if (!slider.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+
+    event.preventDefault();
+
+    updateVolumeFromPointer(event, slider);
+  };
+
+  const handleVolumePointerUp = (
+    event: PointerEvent<HTMLDivElement>,
+    sliderRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    const slider = sliderRef.current;
+
+    if (!slider) {
+      return;
+    }
+
+    if (slider.hasPointerCapture(event.pointerId)) {
+      slider.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* Volume keyboard interaction                                               */
+  /* ------------------------------------------------------------------------ */
+
+  const handleVolumeKeyDown = (
+    event: KeyboardEvent<HTMLDivElement>,
+  ) => {
+    const step = 0.05;
+
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowLeft":
+        event.preventDefault();
+        setVolume(Math.max(0, effectiveVolume - step));
+        break;
+
+      case "ArrowUp":
+      case "ArrowRight":
+        event.preventDefault();
+        setVolume(Math.min(1, effectiveVolume + step));
+        break;
+
+      case "Home":
+        event.preventDefault();
+        setVolume(0);
+        break;
+
+      case "End":
+        event.preventDefault();
+        setVolume(1);
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  /* ------------------------------------------------------------------------ */
   /* Download                                                                 */
   /* ------------------------------------------------------------------------ */
 
@@ -135,31 +384,6 @@ export default function AudioPlayerBar() {
   if (!currentItem) {
     return null;
   }
-
-  /* ------------------------------------------------------------------------ */
-  /* Shared range input styles                                                */
-  /* ------------------------------------------------------------------------ */
-
-  const rangeInputClassName = [
-    "audio-range",
-    "appearance-none",
-    "bg-transparent",
-    "[&::-webkit-slider-runnable-track]:appearance-none",
-    "[&::-webkit-slider-runnable-track]:bg-transparent",
-    "[&::-webkit-slider-thumb]:appearance-none",
-    "[&::-webkit-slider-thumb]:h-0",
-    "[&::-webkit-slider-thumb]:w-0",
-    "[&::-webkit-slider-thumb]:border-0",
-    "[&::-webkit-slider-thumb]:bg-transparent",
-    "[&::-webkit-slider-thumb]:shadow-none",
-    "[&::-moz-range-track]:border-0",
-    "[&::-moz-range-track]:bg-transparent",
-    "[&::-moz-range-thumb]:h-0",
-    "[&::-moz-range-thumb]:w-0",
-    "[&::-moz-range-thumb]:border-0",
-    "[&::-moz-range-thumb]:bg-transparent",
-    "[&::-moz-range-thumb]:shadow-none",
-  ].join(" ");
 
   /* ------------------------------------------------------------------------ */
   /* Shared mobile button styles                                              */
@@ -208,11 +432,64 @@ export default function AudioPlayerBar() {
         {/* ================================================================= */}
 
         <div className="hidden pt-5 md:block">
-          <div className="relative h-3 w-full">
+          <div
+            ref={progressSliderRef}
+            role="slider"
+            tabIndex={duration ? 0 : -1}
+            aria-label="Audio progress"
+            aria-valuemin={0}
+            aria-valuemax={duration || 0}
+            aria-valuenow={Math.min(
+              duration || 0,
+              Math.max(0, currentTime),
+            )}
+            aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
+            onKeyDown={handleProgressKeyDown}
+            onPointerDown={(event) =>
+              handleProgressPointerDown(
+                event,
+                progressSliderRef,
+              )
+            }
+            onPointerMove={(event) =>
+              handleProgressPointerMove(
+                event,
+                progressSliderRef,
+              )
+            }
+            onPointerUp={(event) =>
+              handleProgressPointerUp(
+                event,
+                progressSliderRef,
+              )
+            }
+            onPointerCancel={(event) =>
+              handleProgressPointerUp(
+                event,
+                progressSliderRef,
+              )
+            }
+            className={[
+              "relative",
+              "h-4",
+              "w-full",
+              "touch-none",
+              duration
+                ? "cursor-pointer"
+                : "cursor-default",
+              "select-none",
+              "outline-none",
+              "focus-visible:ring-2",
+              "focus-visible:ring-bronze/30",
+              "focus-visible:ring-offset-2",
+              "focus-visible:ring-offset-ivory",
+            ].join(" ")}
+          >
             {/* Track */}
 
             <div
               className={[
+                "pointer-events-none",
                 "absolute",
                 "inset-x-0",
                 "top-1/2",
@@ -256,7 +533,7 @@ export default function AudioPlayerBar() {
                 "-translate-x-1/2",
                 "-translate-y-1/2",
                 "rounded-full",
-                "border-2",
+                "border-1",
                 "border-white",
                 "bg-bronze",
                 "shadow-[0_1px_5px_rgba(0,0,0,0.22)]",
@@ -264,33 +541,6 @@ export default function AudioPlayerBar() {
               style={{
                 left: `${progress}%`,
               }}
-            />
-
-            {/* Invisible range input */}
-
-            <input
-              type="range"
-              min={0}
-              max={duration || 0}
-              step={0.1}
-              value={currentTime}
-              disabled={!duration}
-              onChange={(event) =>
-                seek(Number(event.target.value))
-              }
-              aria-label="Audio progress"
-              className={[
-                rangeInputClassName,
-                "absolute",
-                "inset-x-0",
-                "top-1/2",
-                "z-20",
-                "h-4",
-                "w-full",
-                "-translate-y-1/2",
-                "cursor-pointer",
-                "disabled:cursor-default",
-              ].join(" ")}
             />
           </div>
         </div>
@@ -639,11 +889,63 @@ export default function AudioPlayerBar() {
                   "backdrop-blur-xl",
                 ].join(" ")}
               >
-                <div className="relative h-20 w-5">
+                <div
+                  ref={desktopVolumeSliderRef}
+                  role="slider"
+                  tabIndex={0}
+                  aria-label="Volume"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(
+                    effectiveVolume * 100,
+                  )}
+                  aria-valuetext={`${Math.round(
+                    effectiveVolume * 100,
+                  )}%`}
+                  onKeyDown={handleVolumeKeyDown}
+                  onPointerDown={(event) =>
+                    handleVolumePointerDown(
+                      event,
+                      desktopVolumeSliderRef,
+                    )
+                  }
+                  onPointerMove={(event) =>
+                    handleVolumePointerMove(
+                      event,
+                      desktopVolumeSliderRef,
+                    )
+                  }
+                  onPointerUp={(event) =>
+                    handleVolumePointerUp(
+                      event,
+                      desktopVolumeSliderRef,
+                    )
+                  }
+                  onPointerCancel={(event) =>
+                    handleVolumePointerUp(
+                      event,
+                      desktopVolumeSliderRef,
+                    )
+                  }
+                  className={[
+                    "relative",
+                    "h-20",
+                    "w-5",
+                    "touch-none",
+                    "cursor-pointer",
+                    "select-none",
+                    "outline-none",
+                    "focus-visible:ring-2",
+                    "focus-visible:ring-bronze/30",
+                    "focus-visible:ring-offset-2",
+                    "focus-visible:ring-offset-ivory",
+                  ].join(" ")}
+                >
                   {/* Track */}
 
                   <div
                     className={[
+                      "pointer-events-none",
                       "absolute",
                       "left-1/2",
                       "top-1/2",
@@ -687,45 +989,13 @@ export default function AudioPlayerBar() {
                       "-translate-x-1/2",
                       "translate-y-1/2",
                       "rounded-full",
-                      "border-2",
+                      "border-1",
                       "border-white",
                       "bg-bronze",
                       "shadow-[0_1px_5px_rgba(0,0,0,0.22)]",
                     ].join(" ")}
                     style={{
                       bottom: `${volumeProgress}%`,
-                    }}
-                  />
-
-                  {/* Invisible range input */}
-
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={effectiveVolume}
-                    onChange={(event) =>
-                      setVolume(
-                        Number(event.target.value),
-                      )
-                    }
-                    aria-label="Volume"
-                    className={[
-                      rangeInputClassName,
-                      "absolute",
-                      "left-1/2",
-                      "top-1/2",
-                      "z-20",
-                      "h-20",
-                      "w-5",
-                      "-translate-x-1/2",
-                      "-translate-y-1/2",
-                      "cursor-pointer",
-                    ].join(" ")}
-                    style={{
-                      writingMode: "vertical-lr",
-                      direction: "rtl",
                     }}
                   />
                 </div>
@@ -953,11 +1223,64 @@ export default function AudioPlayerBar() {
           {/* Mobile progress + time */}
 
           <div className="pb-1 pt-1">
-            <div className="relative h-3 w-full">
+            <div
+              ref={mobileProgressSliderRef}
+              role="slider"
+              tabIndex={duration ? 0 : -1}
+              aria-label="Audio progress"
+              aria-valuemin={0}
+              aria-valuemax={duration || 0}
+              aria-valuenow={Math.min(
+                duration || 0,
+                Math.max(0, currentTime),
+              )}
+              aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
+              onKeyDown={handleProgressKeyDown}
+              onPointerDown={(event) =>
+                handleProgressPointerDown(
+                  event,
+                  mobileProgressSliderRef,
+                )
+              }
+              onPointerMove={(event) =>
+                handleProgressPointerMove(
+                  event,
+                  mobileProgressSliderRef,
+                )
+              }
+              onPointerUp={(event) =>
+                handleProgressPointerUp(
+                  event,
+                  mobileProgressSliderRef,
+                )
+              }
+              onPointerCancel={(event) =>
+                handleProgressPointerUp(
+                  event,
+                  mobileProgressSliderRef,
+                )
+              }
+              className={[
+                "relative",
+                "h-4",
+                "w-full",
+                "touch-none",
+                duration
+                  ? "cursor-pointer"
+                  : "cursor-default",
+                "select-none",
+                "outline-none",
+                "focus-visible:ring-2",
+                "focus-visible:ring-bronze/30",
+                "focus-visible:ring-offset-2",
+                "focus-visible:ring-offset-ivory",
+              ].join(" ")}
+            >
               {/* Track */}
 
               <div
                 className={[
+                  "pointer-events-none",
                   "absolute",
                   "inset-x-0",
                   "top-1/2",
@@ -1001,7 +1324,7 @@ export default function AudioPlayerBar() {
                   "-translate-x-1/2",
                   "-translate-y-1/2",
                   "rounded-full",
-                  "border-2",
+                  "border-1",
                   "border-white",
                   "bg-bronze",
                   "shadow-[0_1px_5px_rgba(0,0,0,0.22)]",
@@ -1009,33 +1332,6 @@ export default function AudioPlayerBar() {
                 style={{
                   left: `${progress}%`,
                 }}
-              />
-
-              {/* Invisible range input */}
-
-              <input
-                type="range"
-                min={0}
-                max={duration || 0}
-                step={0.1}
-                value={currentTime}
-                disabled={!duration}
-                onChange={(event) =>
-                  seek(Number(event.target.value))
-                }
-                aria-label="Audio progress"
-                className={[
-                  rangeInputClassName,
-                  "absolute",
-                  "inset-x-0",
-                  "top-1/2",
-                  "z-20",
-                  "h-4",
-                  "w-full",
-                  "-translate-y-1/2",
-                  "cursor-pointer",
-                  "disabled:cursor-default",
-                ].join(" ")}
               />
             </div>
 
@@ -1278,11 +1574,63 @@ export default function AudioPlayerBar() {
 
                   {/* Mobile visual volume slider */}
 
-                  <div className="relative h-20 w-5">
+                  <div
+                    ref={mobileVolumeSliderRef}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label="Volume"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(
+                      effectiveVolume * 100,
+                    )}
+                    aria-valuetext={`${Math.round(
+                      effectiveVolume * 100,
+                    )}%`}
+                    onKeyDown={handleVolumeKeyDown}
+                    onPointerDown={(event) =>
+                      handleVolumePointerDown(
+                        event,
+                        mobileVolumeSliderRef,
+                      )
+                    }
+                    onPointerMove={(event) =>
+                      handleVolumePointerMove(
+                        event,
+                        mobileVolumeSliderRef,
+                      )
+                    }
+                    onPointerUp={(event) =>
+                      handleVolumePointerUp(
+                        event,
+                        mobileVolumeSliderRef,
+                      )
+                    }
+                    onPointerCancel={(event) =>
+                      handleVolumePointerUp(
+                        event,
+                        mobileVolumeSliderRef,
+                      )
+                    }
+                    className={[
+                      "relative",
+                      "h-20",
+                      "w-5",
+                      "touch-none",
+                      "cursor-pointer",
+                      "select-none",
+                      "outline-none",
+                      "focus-visible:ring-2",
+                      "focus-visible:ring-bronze/30",
+                      "focus-visible:ring-offset-2",
+                      "focus-visible:ring-offset-ivory",
+                    ].join(" ")}
+                  >
                     {/* Track */}
 
                     <div
                       className={[
+                        "pointer-events-none",
                         "absolute",
                         "left-1/2",
                         "top-1/2",
@@ -1326,45 +1674,13 @@ export default function AudioPlayerBar() {
                         "-translate-x-1/2",
                         "translate-y-1/2",
                         "rounded-full",
-                        "border-2",
+                        "border-1",
                         "border-white",
                         "bg-bronze",
                         "shadow-[0_1px_5px_rgba(0,0,0,0.22)]",
                       ].join(" ")}
                       style={{
                         bottom: `${volumeProgress}%`,
-                      }}
-                    />
-
-                    {/* Invisible range input */}
-
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={effectiveVolume}
-                      onChange={(event) =>
-                        setVolume(
-                          Number(event.target.value),
-                        )
-                      }
-                      aria-label="Volume"
-                      className={[
-                        rangeInputClassName,
-                        "absolute",
-                        "left-1/2",
-                        "top-1/2",
-                        "z-20",
-                        "h-20",
-                        "w-5",
-                        "-translate-x-1/2",
-                        "-translate-y-1/2",
-                        "cursor-pointer",
-                      ].join(" ")}
-                      style={{
-                        writingMode: "vertical-lr",
-                        direction: "rtl",
                       }}
                     />
                   </div>
