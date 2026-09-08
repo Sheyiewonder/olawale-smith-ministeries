@@ -23,6 +23,8 @@ import {
 
 import type {
   PDFDocumentProxy,
+  PDFPageProxy,
+  RenderTask,
 } from "pdfjs-dist";
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -37,25 +39,41 @@ interface PdfPreviewProps {
 }
 
 /*
- * Keep the number of pages actively rendered very small.
+ * Only pages inside this window are mounted/rendered.
  *
- * This is intentionally conservative for iPhone/Safari.
+ * On mobile this normally means:
+ *   current page
+ *   previous page
+ *   next page
+ *
+ * This is deliberately conservative for iPhone/Safari.
  */
 const RENDER_BUFFER = 1;
 
 /*
- * Conservative canvas resolution.
+ * Keep rendering resolution conservative.
  */
-const MAX_DPR_DESKTOP = 1.35;
-const MAX_DPR_MOBILE = 1.1;
+const MAX_DPR_DESKTOP = 1.25;
+const MAX_DPR_MOBILE = 1;
+
+/*
+ * Maximum canvas memory budget per individual page.
+ */
+const MAX_PIXELS_DESKTOP = 18_000_000;
+const MAX_PIXELS_MOBILE = 8_000_000;
 
 /*
  * Approximate A4 portrait ratio.
  *
- * Used only as a temporary placeholder until an
- * individual page is actually rendered.
+ * This is only used for placeholders before a real page
+ * has been loaded.
  */
 const DEFAULT_PAGE_RATIO = 210 / 297;
+
+interface PageDimensions {
+  width: number;
+  height: number;
+}
 
 function sanitizeFilenameTitle(
   title: string,
@@ -84,11 +102,6 @@ function getDownloadFilename(
   }
 
   return "document.pdf";
-}
-
-interface PageRatio {
-  width: number;
-  height: number;
 }
 
 export default function PdfPreview({
@@ -124,21 +137,28 @@ export default function PdfPreview({
     useState(0);
 
   /*
-   * Only stores numeric page dimensions.
-   *
-   * Unlike the previous implementation, we DON'T
-   * fetch every page just to populate this object.
-   *
-   * A page is added here only after it is actually
-   * needed for rendering.
+   * Only pages inside this set are mounted.
    */
-  const [pageRatios, setPageRatios] =
-    useState<Record<number, PageRatio>>(
-      {},
+  const [activePages, setActivePages] =
+    useState<Set<number>>(
+      () => new Set(),
     );
 
   /*
+   * Dimensions are learned lazily.
+   *
+   * We never call getPage() for every page up front.
+   */
+  const [pageDimensions, setPageDimensions] =
+    useState<
+      Record<number, PageDimensions>
+    >({});
+
+  /*
    * Page wrapper references.
+   *
+   * These remain lightweight divs and contain no
+   * canvas unless the page is active.
    */
   const pageHostRefs =
     useRef<
@@ -146,7 +166,7 @@ export default function PdfPreview({
     >({});
 
   /*
-   * Canvas references.
+   * Canvas references only exist for active pages.
    */
   const canvasRefs =
     useRef<
@@ -157,28 +177,42 @@ export default function PdfPreview({
     useRef<HTMLDivElement | null>(null);
 
   /*
-   * The PDF document itself.
-   *
-   * No PDFPageProxy objects are retained.
+   * Current PDF document.
    */
   const pdfDocumentRef =
     useRef<PDFDocumentProxy | null>(null);
 
   /*
-   * Active rendering page numbers.
+   * Current PDF loading task.
+   */
+  const loadingTaskRef =
+    useRef<{
+      destroy?: () => Promise<void> | void;
+    } | null>(null);
+
+  /*
+   * Active PDF.js render tasks.
+   */
+  const renderTasksRef =
+    useRef<
+      Record<number, RenderTask | null>
+    >({});
+
+  /*
+   * Pages currently rendering.
    */
   const renderingPagesRef =
     useRef<Set<number>>(new Set());
 
   /*
-   * Pages whose canvas has successfully rendered.
+   * Pages that successfully rendered.
    */
   const renderedPagesRef =
     useRef<Set<number>>(new Set());
 
   /*
-   * Prevents stale asynchronous work from touching
-   * a newer PDF/render generation.
+   * Prevents stale asynchronous work from affecting
+   * a newer document/render generation.
    */
   const generationRef =
     useRef(0);
@@ -189,10 +223,15 @@ export default function PdfPreview({
   const containerWidthRef =
     useRef(containerWidth);
 
+  const activePagesRef =
+    useRef<Set<number>>(
+      new Set(),
+    );
+
   void thumbnailUrl;
 
   /* ------------------------------------------------------------------------ */
-  /* Keep refs synchronized                                                   */
+  /* Synchronize refs                                                         */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -204,40 +243,140 @@ export default function PdfPreview({
       containerWidth;
   }, [containerWidth]);
 
+  useEffect(() => {
+    activePagesRef.current =
+      activePages;
+  }, [activePages]);
+
   /* ------------------------------------------------------------------------ */
-  /* Clear one canvas                                                         */
+  /* Cancel one page render                                                   */
   /* ------------------------------------------------------------------------ */
 
-  const clearCanvas =
+  const cancelPageRender =
     useCallback(
       (pageNumber: number) => {
+        const task =
+          renderTasksRef.current[
+            pageNumber
+          ];
+
+        if (task) {
+          try {
+            task.cancel();
+          } catch {
+            // Ignore cancellation failures.
+          }
+        }
+
+        renderTasksRef.current[
+          pageNumber
+        ] = null;
+
+        renderingPagesRef.current.delete(
+          pageNumber,
+        );
+      },
+      [],
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /* Release one canvas                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  const releaseCanvas =
+    useCallback(
+      (pageNumber: number) => {
+        cancelPageRender(pageNumber);
+
         const canvas =
           canvasRefs.current[
             pageNumber
           ];
 
-        if (!canvas) {
-          renderedPagesRef.current.delete(
-            pageNumber,
-          );
+        if (canvas) {
+          try {
+            const context =
+              canvas.getContext("2d");
 
-          return;
+            if (context) {
+              context.clearRect(
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+              );
+            }
+          } catch {
+            // Ignore canvas cleanup failures.
+          }
+
+          /*
+           * Reducing the backing store to 1x1 releases
+           * the large bitmap allocation.
+           */
+          canvas.width = 1;
+          canvas.height = 1;
+
+          canvas.style.width = "0px";
+          canvas.style.height = "0px";
         }
 
-        /*
-         * Release the backing canvas memory.
-         */
-        canvas.width = 1;
-        canvas.height = 1;
-
-        canvas.style.width = "0px";
-        canvas.style.height = "0px";
+        delete canvasRefs.current[
+          pageNumber
+        ];
 
         renderedPagesRef.current.delete(
           pageNumber,
         );
       },
-      [],
+      [cancelPageRender],
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /* Release pages outside active window                                     */
+  /* ------------------------------------------------------------------------ */
+
+  const releaseInactivePages =
+    useCallback(
+      (nextActivePages: Set<number>) => {
+        const currentlyRendered =
+          Array.from(
+            renderedPagesRef.current,
+          );
+
+        for (const pageNumber of currentlyRendered) {
+          if (
+            !nextActivePages.has(
+              pageNumber,
+            )
+          ) {
+            releaseCanvas(
+              pageNumber,
+            );
+          }
+        }
+
+        const currentlyRendering =
+          Array.from(
+            renderingPagesRef.current,
+          );
+
+        for (const pageNumber of currentlyRendering) {
+          if (
+            !nextActivePages.has(
+              pageNumber,
+            )
+          ) {
+            cancelPageRender(
+              pageNumber,
+            );
+          }
+        }
+      },
+      [
+        cancelPageRender,
+        releaseCanvas,
+      ],
     );
 
   /* ------------------------------------------------------------------------ */
@@ -263,12 +402,21 @@ export default function PdfPreview({
 
     updateWidth();
 
-    const observer =
-      new ResizeObserver(
-        updateWidth,
-      );
+    if (
+      typeof ResizeObserver !==
+      "undefined"
+    ) {
+      const observer =
+        new ResizeObserver(
+          updateWidth,
+        );
 
-    observer.observe(element);
+      observer.observe(element);
+
+      return () => {
+        observer.disconnect();
+      };
+    }
 
     window.addEventListener(
       "resize",
@@ -276,8 +424,6 @@ export default function PdfPreview({
     );
 
     return () => {
-      observer.disconnect();
-
       window.removeEventListener(
         "resize",
         updateWidth,
@@ -297,9 +443,18 @@ export default function PdfPreview({
         setLoading(false);
         setDocumentReady(false);
         setPageCount(0);
-        setPageRatios({});
+        setPageDimensions({});
+        setActivePages(
+          new Set(),
+        );
+
         return;
       }
+
+      /*
+       * Invalidate every previous async operation.
+       */
+      generationRef.current += 1;
 
       setLoading(true);
       setPreviewError(null);
@@ -307,12 +462,52 @@ export default function PdfPreview({
       setPageCount(0);
       setCurrentPage(1);
       setContainerWidth(0);
-      setPageRatios({});
-
-      generationRef.current += 1;
+      setPageDimensions({});
+      setActivePages(
+        new Set(),
+      );
 
       /*
-       * Release references to the previous document.
+       * Cancel/release previous rendering.
+       */
+      const previousPages =
+        Array.from(
+          renderingPagesRef.current,
+        );
+
+      previousPages.forEach(
+        cancelPageRender,
+      );
+
+      renderedPagesRef.current.clear();
+      renderingPagesRef.current.clear();
+
+      renderTasksRef.current = {};
+      canvasRefs.current = {};
+      pageHostRefs.current = {};
+
+      /*
+       * Destroy previous loading task if possible.
+       */
+      const previousLoadingTask =
+        loadingTaskRef.current;
+
+      loadingTaskRef.current = null;
+
+      if (
+        previousLoadingTask &&
+        typeof previousLoadingTask.destroy ===
+          "function"
+      ) {
+        try {
+          await previousLoadingTask.destroy();
+        } catch {
+          // Ignore cleanup failures.
+        }
+      }
+
+      /*
+       * Cleanup previous PDF document.
        */
       const previousPdf =
         pdfDocumentRef.current;
@@ -327,12 +522,6 @@ export default function PdfPreview({
         }
       }
 
-      renderedPagesRef.current.clear();
-      renderingPagesRef.current.clear();
-
-      pageHostRefs.current = {};
-      canvasRefs.current = {};
-
       try {
         const loadingTask =
           getDocument({
@@ -340,10 +529,16 @@ export default function PdfPreview({
             withCredentials: false,
           });
 
+        loadingTaskRef.current =
+          loadingTask;
+
         const pdf =
           await loadingTask.promise;
 
-        if (cancelled) {
+        if (
+          cancelled ||
+          generationRef.current <= 0
+        ) {
           try {
             await pdf.cleanup();
           } catch {
@@ -353,7 +548,8 @@ export default function PdfPreview({
           return;
         }
 
-        pdfDocumentRef.current = pdf;
+        pdfDocumentRef.current =
+          pdf;
 
         setPageCount(
           pdf.numPages,
@@ -375,7 +571,10 @@ export default function PdfPreview({
         setLoading(false);
         setDocumentReady(false);
         setPageCount(0);
-        setPageRatios({});
+        setPageDimensions({});
+        setActivePages(
+          new Set(),
+        );
 
         setPreviewError(
           "The PDF could not be loaded for preview.",
@@ -390,16 +589,64 @@ export default function PdfPreview({
 
       generationRef.current += 1;
 
-      const pdf =
-        pdfDocumentRef.current;
+      /*
+       * Cancel all active render tasks.
+       */
+      const renderingPages =
+        Array.from(
+          renderingPagesRef.current,
+        );
 
-      pdfDocumentRef.current = null;
+      renderingPages.forEach(
+        cancelPageRender,
+      );
+
+      /*
+       * Release every active canvas.
+       */
+      const renderedPages =
+        Array.from(
+          renderedPagesRef.current,
+        );
+
+      renderedPages.forEach(
+        releaseCanvas,
+      );
 
       renderedPagesRef.current.clear();
       renderingPagesRef.current.clear();
 
-      pageHostRefs.current = {};
+      renderTasksRef.current = {};
       canvasRefs.current = {};
+      pageHostRefs.current = {};
+
+      /*
+       * Cancel loading.
+       */
+      const loadingTask =
+        loadingTaskRef.current;
+
+      loadingTaskRef.current = null;
+
+      if (
+        loadingTask &&
+        typeof loadingTask.destroy ===
+          "function"
+      ) {
+        try {
+          void loadingTask.destroy();
+        } catch {
+          // Ignore cleanup failures.
+        }
+      }
+
+      /*
+       * Cleanup PDF.
+       */
+      const pdf =
+        pdfDocumentRef.current;
+
+      pdfDocumentRef.current = null;
 
       if (pdf) {
         void pdf
@@ -409,7 +656,11 @@ export default function PdfPreview({
           });
       }
     };
-  }, [src]);
+  }, [
+    src,
+    cancelPageRender,
+    releaseCanvas,
+  ]);
 
   /* ------------------------------------------------------------------------ */
   /* Available page width                                                     */
@@ -424,25 +675,25 @@ export default function PdfPreview({
         return 0;
       }
 
-      /*
-       * px-3 on mobile = 12px each side.
-       * px-6 on desktop = 24px each side.
-       */
-      const horizontalPadding =
+      const isDesktop =
         window.matchMedia(
           "(min-width: 640px)",
-        ).matches
+        ).matches;
+
+      const horizontalPadding =
+        isDesktop
           ? 48
           : 24;
 
       return Math.max(
-        width - horizontalPadding,
+        width -
+          horizontalPadding,
         240,
       );
     }, []);
 
   /* ------------------------------------------------------------------------ */
-  /* Placeholder height                                                       */
+  /* Placeholder height                                                      */
   /* ------------------------------------------------------------------------ */
 
   const getPageHeight =
@@ -456,7 +707,7 @@ export default function PdfPreview({
         }
 
         const dimensions =
-          pageRatios[
+          pageDimensions[
             pageNumber
           ];
 
@@ -478,7 +729,7 @@ export default function PdfPreview({
       },
       [
         getAvailableWidth,
-        pageRatios,
+        pageDimensions,
         zoom,
       ],
     );
@@ -573,6 +824,54 @@ export default function PdfPreview({
     }, [pageCount]);
 
   /* ------------------------------------------------------------------------ */
+  /* Update active pages                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  const updateActivePages =
+    useCallback(() => {
+      if (
+        !documentReady ||
+        pageCount <= 0
+      ) {
+        return;
+      }
+
+      const {
+        first,
+        last,
+      } = getVisiblePageRange();
+
+      const nextPages =
+        new Set<number>();
+
+      for (
+        let pageNumber = first;
+        pageNumber <= last;
+        pageNumber += 1
+      ) {
+        nextPages.add(
+          pageNumber,
+        );
+      }
+
+      activePagesRef.current =
+        nextPages;
+
+      setActivePages(
+        nextPages,
+      );
+
+      releaseInactivePages(
+        nextPages,
+      );
+    }, [
+      documentReady,
+      pageCount,
+      getVisiblePageRange,
+      releaseInactivePages,
+    ]);
+
+  /* ------------------------------------------------------------------------ */
   /* Render one page                                                          */
   /* ------------------------------------------------------------------------ */
 
@@ -585,6 +884,14 @@ export default function PdfPreview({
         if (
           generation !==
           generationRef.current
+        ) {
+          return;
+        }
+
+        if (
+          !activePagesRef.current.has(
+            pageNumber,
+          )
         ) {
           return;
         }
@@ -617,7 +924,9 @@ export default function PdfPreview({
           pageNumber,
         );
 
-        let page = null;
+        let page:
+          | PDFPageProxy
+          | null = null;
 
         try {
           page =
@@ -627,7 +936,10 @@ export default function PdfPreview({
 
           if (
             generation !==
-            generationRef.current
+            generationRef.current ||
+            !activePagesRef.current.has(
+              pageNumber,
+            )
           ) {
             return;
           }
@@ -651,9 +963,9 @@ export default function PdfPreview({
           }
 
           /*
-           * Store dimensions only for this page.
+           * Save the true page dimensions.
            */
-          setPageRatios(
+          setPageDimensions(
             (previous) => {
               const existing =
                 previous[
@@ -685,7 +997,9 @@ export default function PdfPreview({
           const availableWidth =
             getAvailableWidth();
 
-          if (availableWidth <= 0) {
+          if (
+            availableWidth <= 0
+          ) {
             return;
           }
 
@@ -693,6 +1007,9 @@ export default function PdfPreview({
             availableWidth /
             baseViewport.width;
 
+          /*
+           * Never render below 0.5 scale.
+           */
           const scale =
             Math.max(
               widthScale,
@@ -719,13 +1036,10 @@ export default function PdfPreview({
                 : MAX_DPR_DESKTOP,
             );
 
-          /*
-           * Hard mobile safety cap.
-           */
-          const MAX_PIXELS =
+          const maxPixels =
             isMobile
-              ? 12_000_000
-              : 24_000_000;
+              ? MAX_PIXELS_MOBILE
+              : MAX_PIXELS_DESKTOP;
 
           let pixelWidth =
             Math.max(
@@ -746,7 +1060,7 @@ export default function PdfPreview({
             );
 
           /*
-           * Prevent enormous canvas allocations.
+           * Protect against huge pages.
            */
           const pixelCount =
             pixelWidth *
@@ -754,11 +1068,11 @@ export default function PdfPreview({
 
           if (
             pixelCount >
-            MAX_PIXELS
+            maxPixels
           ) {
             const reduction =
               Math.sqrt(
-                MAX_PIXELS /
+                maxPixels /
                   pixelCount,
               );
 
@@ -793,6 +1107,12 @@ export default function PdfPreview({
             return;
           }
 
+          /*
+           * Clear any previous backing store.
+           */
+          canvas.width = 1;
+          canvas.height = 1;
+
           canvas.width =
             pixelWidth;
 
@@ -824,6 +1144,16 @@ export default function PdfPreview({
             canvas.height,
           );
 
+          if (
+            generation !==
+            generationRef.current ||
+            !activePagesRef.current.has(
+              pageNumber,
+            )
+          ) {
+            return;
+          }
+
           const renderTask =
             page.render({
               canvas,
@@ -843,11 +1173,18 @@ export default function PdfPreview({
                   : undefined,
             });
 
+          renderTasksRef.current[
+            pageNumber
+          ] = renderTask;
+
           await renderTask.promise;
 
           if (
             generation !==
-            generationRef.current
+            generationRef.current ||
+            !activePagesRef.current.has(
+              pageNumber,
+            )
           ) {
             return;
           }
@@ -879,12 +1216,17 @@ export default function PdfPreview({
             error,
           );
         } finally {
+          renderTasksRef.current[
+            pageNumber
+          ] = null;
+
           renderingPagesRef.current.delete(
             pageNumber,
           );
 
           /*
-           * Explicitly release the page proxy if supported.
+           * PDF.js page proxies can retain significant
+           * resources. Release them immediately.
            */
           if (
             page &&
@@ -913,10 +1255,10 @@ export default function PdfPreview({
     );
 
   /* ------------------------------------------------------------------------ */
-  /* Render visible pages                                                     */
+  /* Render active pages sequentially                                         */
   /* ------------------------------------------------------------------------ */
 
-  const renderVisiblePages =
+  const renderActivePages =
     useCallback(async () => {
       if (
         !documentReady ||
@@ -929,30 +1271,20 @@ export default function PdfPreview({
       const generation =
         generationRef.current;
 
-      const {
-        first,
-        last,
-      } = getVisiblePageRange();
-
-      const pageNumbers =
+      const pages =
         Array.from(
-          {
-            length:
-              last - first + 1,
-          },
-          (_, index) =>
-            first + index,
+          activePagesRef.current,
+        ).sort(
+          (a, b) => a - b,
         );
 
       /*
        * Render sequentially.
        *
-       * This is intentional.
-       *
-       * Parallel PDF.js canvas rendering is more
-       * memory-hungry on mobile Safari.
+       * Never ask PDF.js to render several large pages
+       * simultaneously on mobile Safari.
        */
-      for (const pageNumber of pageNumbers) {
+      for (const pageNumber of pages) {
         if (
           generation !==
           generationRef.current
@@ -961,13 +1293,38 @@ export default function PdfPreview({
         }
 
         if (
+          !activePagesRef.current.has(
+            pageNumber,
+          )
+        ) {
+          continue;
+        }
+
+        if (
           renderedPagesRef.current.has(
             pageNumber,
-          ) ||
+          )
+        ) {
+          continue;
+        }
+
+        if (
           renderingPagesRef.current.has(
             pageNumber,
           )
         ) {
+          continue;
+        }
+
+        /*
+         * React may not have mounted the canvas yet.
+         */
+        const canvas =
+          canvasRefs.current[
+            pageNumber
+          ];
+
+        if (!canvas) {
           continue;
         }
 
@@ -979,12 +1336,11 @@ export default function PdfPreview({
     }, [
       documentReady,
       pageCount,
-      getVisiblePageRange,
       renderPage,
     ]);
 
   /* ------------------------------------------------------------------------ */
-  /* Initial rendering                                                        */
+  /* Initial active pages                                                     */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -995,57 +1351,18 @@ export default function PdfPreview({
     ) {
       return;
     }
-
-    const frame =
-      requestAnimationFrame(() => {
-        void renderVisiblePages();
-      });
-
-    return () => {
-      cancelAnimationFrame(
-        frame,
-      );
-    };
-  }, [
-    documentReady,
-    pageCount,
-    containerWidth,
-    renderVisiblePages,
-  ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Zoom                                                                     */
-  /* ------------------------------------------------------------------------ */
-
-  useEffect(() => {
-    if (
-      !documentReady ||
-      pageCount <= 0 ||
-      containerWidth <= 0
-    ) {
-      return;
-    }
-
-    generationRef.current += 1;
 
     /*
-     * Release existing canvas backing stores.
+     * First determine which pages should exist.
      */
-    const renderedPages =
-      Array.from(
-        renderedPagesRef.current,
-      );
-
-    renderedPages.forEach(
-      clearCanvas,
-    );
-
-    renderedPagesRef.current.clear();
-    renderingPagesRef.current.clear();
+    updateActivePages();
 
     const frame =
       requestAnimationFrame(() => {
-        void renderVisiblePages();
+        /*
+         * React has now mounted the active canvases.
+         */
+        void renderActivePages();
       });
 
     return () => {
@@ -1054,16 +1371,15 @@ export default function PdfPreview({
       );
     };
   }, [
-    zoom,
     documentReady,
     pageCount,
     containerWidth,
-    clearCanvas,
-    renderVisiblePages,
+    updateActivePages,
+    renderActivePages,
   ]);
 
   /* ------------------------------------------------------------------------ */
-  /* Track current page                                                       */
+  /* Scroll                                                                    */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -1084,8 +1400,6 @@ export default function PdfPreview({
     let ticking = false;
 
     function updateCurrentPage() {
-      ticking = false;
-
       const container =
         canvasContainerRef.current;
 
@@ -1100,6 +1414,7 @@ export default function PdfPreview({
         scrollTop + 32;
 
       let closestPage = 1;
+
       let closestDistance =
         Number.POSITIVE_INFINITY;
 
@@ -1152,9 +1467,22 @@ export default function PdfPreview({
       ticking = true;
 
       requestAnimationFrame(() => {
+        ticking = false;
+
         updateCurrentPage();
 
-        void renderVisiblePages();
+        /*
+         * Change which pages are mounted.
+         */
+        updateActivePages();
+
+        /*
+         * Render the newly mounted pages on the
+         * following frame.
+         */
+        requestAnimationFrame(() => {
+          void renderActivePages();
+        });
       });
     }
 
@@ -1167,6 +1495,11 @@ export default function PdfPreview({
     );
 
     updateCurrentPage();
+    updateActivePages();
+
+    requestAnimationFrame(() => {
+      void renderActivePages();
+    });
 
     return () => {
       element.removeEventListener(
@@ -1177,7 +1510,75 @@ export default function PdfPreview({
   }, [
     documentReady,
     pageCount,
-    renderVisiblePages,
+    updateActivePages,
+    renderActivePages,
+  ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Zoom                                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (
+      !documentReady ||
+      pageCount <= 0 ||
+      containerWidth <= 0
+    ) {
+      return;
+    }
+
+    /*
+     * Invalidate all current renders.
+     */
+    generationRef.current += 1;
+
+    /*
+     * Cancel current render tasks.
+     */
+    const renderingPages =
+      Array.from(
+        renderingPagesRef.current,
+      );
+
+    renderingPages.forEach(
+      cancelPageRender,
+    );
+
+    /*
+     * Release currently rendered canvases.
+     *
+     * The wrappers remain, but only active pages will
+     * receive a new canvas.
+     */
+    const renderedPages =
+      Array.from(
+        renderedPagesRef.current,
+      );
+
+    renderedPages.forEach(
+      releaseCanvas,
+    );
+
+    renderedPagesRef.current.clear();
+
+    const frame =
+      requestAnimationFrame(() => {
+        void renderActivePages();
+      });
+
+    return () => {
+      cancelAnimationFrame(
+        frame,
+      );
+    };
+  }, [
+    zoom,
+    documentReady,
+    pageCount,
+    containerWidth,
+    cancelPageRender,
+    releaseCanvas,
+    renderActivePages,
   ]);
 
   /* ------------------------------------------------------------------------ */
@@ -1188,7 +1589,9 @@ export default function PdfPreview({
     setZoom((value) =>
       Math.min(
         Number(
-          (value + 0.1).toFixed(2),
+          (
+            value + 0.1
+          ).toFixed(2),
         ),
         2.5,
       ),
@@ -1199,7 +1602,9 @@ export default function PdfPreview({
     setZoom((value) =>
       Math.max(
         Number(
-          (value - 0.1).toFixed(2),
+          (
+            value - 0.1
+          ).toFixed(2),
         ),
         0.6,
       ),
@@ -1215,7 +1620,10 @@ export default function PdfPreview({
   /* ------------------------------------------------------------------------ */
 
   async function downloadPdf() {
-    if (!src || downloading) {
+    if (
+      !src ||
+      downloading
+    ) {
       return;
     }
 
@@ -1251,12 +1659,19 @@ export default function PdfPreview({
         document.createElement("a");
 
       link.download =
-        getDownloadFilename(title);
+        getDownloadFilename(
+          title,
+        );
 
-      link.href = objectUrl;
-      link.style.display = "none";
+      link.href =
+        objectUrl;
 
-      document.body.appendChild(link);
+      link.style.display =
+        "none";
+
+      document.body.appendChild(
+        link,
+      );
 
       link.click();
 
@@ -1529,6 +1944,11 @@ export default function PdfPreview({
                         pageNumber,
                       );
 
+                    const isActive =
+                      activePages.has(
+                        pageNumber,
+                      );
+
                     return (
                       <div
                         key={pageNumber}
@@ -1543,15 +1963,17 @@ export default function PdfPreview({
                             `${height}px`,
                         }}
                       >
-                        <canvas
-                          ref={(element) => {
-                            canvasRefs.current[
-                              pageNumber
-                            ] = element;
-                          }}
-                          className="block max-w-full rounded-sm bg-white shadow-sm"
-                          aria-label={`PDF page ${pageNumber}`}
-                        />
+                        {isActive && (
+                          <canvas
+                            ref={(element) => {
+                              canvasRefs.current[
+                                pageNumber
+                              ] = element;
+                            }}
+                            className="block max-w-full rounded-sm bg-white shadow-sm"
+                            aria-label={`PDF page ${pageNumber}`}
+                          />
+                        )}
                       </div>
                     );
                   },
