@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowDownToLine,
@@ -17,12 +16,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import {
-  memo,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useAudioPlayer } from "@/components/audio/AudioPlayerProvider";
 import { usePageTheme } from "@/components/theme/ThemeProvider";
@@ -30,7 +24,7 @@ import type { MediaAsset, Resource } from "@/lib/api";
 
 import CustomAudioPlayer from "@/components/admin/resource-preview/CustomAudioPlayer";
 import ImagePreview from "@/components/admin/resource-preview/ImagePreview";
-import PdfPreview from "@/components/admin/resource-preview/PdfPreview";
+// import PdfPreview from "@/components/admin/resource-preview/PdfPreview";
 import YouTubePlayer from "@/components/admin/resource-preview/YouTubePlayer";
 
 interface ResourceCardProps {
@@ -54,10 +48,7 @@ const typeIcons = {
   VIDEO: Video,
   PODCAST: Headphones,
   ARTICLE: FileText,
-} satisfies Record<
-  Resource["type"],
-  typeof FileText
->;
+} satisfies Record<Resource["type"], typeof FileText>;
 
 type QuickViewMode =
   | "AUDIO"
@@ -134,24 +125,18 @@ async function downloadMedia(
   const response = await fetch(media.url);
 
   if (!response.ok) {
-    throw new Error(
-      "Unable to download this resource.",
-    );
+    throw new Error("Unable to download this resource.");
   }
 
   const blob = await response.blob();
 
   if (!blob.size) {
-    throw new Error(
-      "Downloaded resource is empty.",
-    );
+    throw new Error("Downloaded resource is empty.");
   }
 
-  const objectUrl =
-    URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(blob);
 
-  const anchor =
-    document.createElement("a");
+  const anchor = document.createElement("a");
 
   anchor.href = objectUrl;
   anchor.download = getDownloadFilename(
@@ -177,14 +162,10 @@ function getMedia(
   resource: Resource,
   predicate: (media: MediaAsset) => boolean,
 ) {
-  return (
-    resource.media?.find(predicate) ?? null
-  );
+  return resource.media?.find(predicate) ?? null;
 }
 
-function getYouTubeId(
-  media: MediaAsset | null,
-) {
+function getYouTubeId(media: MediaAsset | null) {
   if (!media) {
     return null;
   }
@@ -204,17 +185,13 @@ function getYouTubeId(
   );
 }
 
-function isYouTubeUrl(
-  url?: string | null,
-) {
+function isYouTubeUrl(url?: string | null) {
   if (!url) {
     return false;
   }
 
   try {
-    const hostname = new URL(
-      url,
-    ).hostname.toLowerCase();
+    const hostname = new URL(url).hostname.toLowerCase();
 
     return (
       hostname === "youtube.com" ||
@@ -227,9 +204,7 @@ function isYouTubeUrl(
   }
 }
 
-function getAudioMedia(
-  resource: Resource,
-) {
+function getAudioMedia(resource: Resource) {
   return (
     resource.media?.find(
       (media) =>
@@ -243,12 +218,11 @@ function getAudioMedia(
 /* Component                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function ResourceCard({
+export default function ResourceCard({
   resource,
   audioPlaylist = [],
 }: ResourceCardProps) {
-  const { config, theme } =
-    usePageTheme();
+  const { config, theme } = usePageTheme();
 
   const {
     currentItem,
@@ -257,8 +231,7 @@ function ResourceCard({
     togglePlay,
   } = useAudioPlayer();
 
-  const [menuOpen, setMenuOpen] =
-    useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [quickView, setQuickView] =
     useState<QuickViewMode>(null);
@@ -272,8 +245,7 @@ function ResourceCard({
   const category =
     resource.categories?.[0]?.category;
 
-  const Icon =
-    typeIcons[resource.type];
+  const Icon = typeIcons[resource.type];
 
   /* ------------------------------------------------------------------------ */
   /* Media                                                                    */
@@ -338,62 +310,61 @@ function ResourceCard({
 
   const isCurrentAudio =
     Boolean(audioMedia?.url) &&
-    currentItem?.resource.id ===
-      resource.id &&
-    currentItem?.media.id ===
-      audioMedia?.id;
+    currentItem?.resource.id === resource.id &&
+    currentItem?.media.id === audioMedia?.id;
 
   /* ------------------------------------------------------------------------ */
-  /* Audio playlist                                                           */
+  /* Audio playlist                                                            */
   /* ------------------------------------------------------------------------ */
 
-  const resolvedAudioPlaylist =
-    useMemo(() => {
-      const source =
-        audioPlaylist.length > 0
-          ? audioPlaylist
-          : [resource];
+  const resolvedAudioPlaylist = useMemo(() => {
+    const source =
+      audioPlaylist.length > 0
+        ? audioPlaylist
+        : [resource];
 
-      const playableResources =
-        source.filter(
-          (item) =>
-            Boolean(
-              getAudioMedia(item)?.url,
-            ),
-        );
+    const playableResources = source.filter(
+      (item) =>
+        Boolean(getAudioMedia(item)?.url),
+    );
 
-      /**
-       * Make sure the resource represented
-       * by this card is always available
-       * in the playlist.
-       */
-      if (
-        audioMedia?.url &&
-        !playableResources.some(
-          (item) =>
-            item.id === resource.id,
-        )
-      ) {
-        return [
-          ...playableResources,
-          resource,
-        ];
-      }
+    /*
+     * Make sure the resource represented by this card
+     * is always available in the playlist.
+     */
+    if (
+      audioMedia?.url &&
+      !playableResources.some(
+        (item) => item.id === resource.id,
+      )
+    ) {
+      return [
+        ...playableResources,
+        resource,
+      ];
+    }
 
-      return playableResources;
-    }, [
-      audioPlaylist,
-      audioMedia,
-      resource,
-    ]);
+    return playableResources;
+  }, [
+    audioPlaylist,
+    audioMedia,
+    resource,
+  ]);
 
   /* ------------------------------------------------------------------------ */
   /* Background audio                                                         */
   /* ------------------------------------------------------------------------ */
 
   async function handleBackgroundPlay() {
-    const playableAudio =
-      getAudioMedia(resource);
+    /*
+     * IMPORTANT:
+     * Use a local variable for the null check.
+     *
+     * TypeScript cannot always preserve the narrowing of
+     * the memoized `audioMedia` value across the async
+     * function boundary.
+     */
+    const playableAudio = getAudioMedia(resource);
 
     if (!playableAudio?.url) {
       return;
@@ -422,17 +393,9 @@ function ResourceCard({
   const youtubeId =
     getYouTubeId(youtubeMedia);
 
-  /**
-   * mqdefault is intentionally used instead of
-   * hqdefault here. The card is only 16:10 and
-   * does not need a large YouTube thumbnail.
-   *
-   * This substantially reduces image memory usage
-   * on mobile Safari.
-   */
   const youtubeThumbnail =
     youtubeId
-      ? `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`
+      ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`
       : null;
 
   /* ------------------------------------------------------------------------ */
@@ -584,8 +547,7 @@ function ResourceCard({
     const previousOverflow =
       document.body.style.overflow;
 
-    document.body.style.overflow =
-      "hidden";
+    document.body.style.overflow = "hidden";
 
     window.addEventListener(
       "keydown",
@@ -635,16 +597,16 @@ function ResourceCard({
       quickView === "PDF" &&
       pdfMedia?.url
     ) {
-      return (
-        <PdfPreview
-          src={pdfMedia.url}
-          title={resource.title}
-          thumbnailUrl={
-            pdfMedia.thumbnailUrl ??
-            null
-          }
-        />
-      );
+      // return (
+      //   // <PdfPreview
+      //   //   src={pdfMedia.url}
+      //   //   title={resource.title}
+      //   //   thumbnailUrl={
+      //   //     pdfMedia.thumbnailUrl ?? null
+      //   //   }
+      //   // />
+      
+      // );
     }
 
     if (quickView === "YOUTUBE") {
@@ -843,13 +805,7 @@ function ResourceCard({
 
   return (
     <>
-      <article
-        className="group relative"
-        style={{
-          contentVisibility: "auto",
-          containIntrinsicSize: "0 430px",
-        }}
-      >
+      <article className="group relative">
         {/* ---------------------------------------------------------------- */}
         {/* Visual                                                            */}
         {/* ---------------------------------------------------------------- */}
@@ -870,14 +826,10 @@ function ResourceCard({
             aria-label={`Open ${resource.title}`}
           >
             {thumbnailUrl ? (
-              <Image
+              <img
                 src={thumbnailUrl}
                 alt={resource.title}
-                fill
-                sizes="(max-width: 639px) 100vw, (max-width: 1023px) 50vw, 25vw"
-                quality={65}
-                loading="lazy"
-                className="object-cover transition-transform duration-700 group-hover:scale-105"
+                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
               />
             ) : (
               <div
@@ -934,8 +886,7 @@ function ResourceCard({
               <button
                 type="button"
                 aria-label={
-                  isCurrentAudio &&
-                  isPlaying
+                  isCurrentAudio && isPlaying
                     ? `Pause ${resource.title}`
                     : `Play ${resource.title}`
                 }
@@ -1580,12 +1531,3 @@ function ResourceCard({
     </>
   );
 }
-
-/**
- * Prevent unnecessary re-renders when the resource itself and
- * playlist reference have not changed.
- *
- * This is particularly useful on mobile because the resource grid
- * can contain many cards.
- */
-export default memo(ResourceCard);
