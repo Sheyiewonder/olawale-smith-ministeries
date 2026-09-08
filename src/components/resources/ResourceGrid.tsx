@@ -42,12 +42,28 @@ export default function ResourceGrid({
     );
   }
 
+  /**
+   * Build the playlist once for the entire resource grid.
+   *
+   * Only resources with an actual AUDIO media URL are included.
+   * This playlist is passed to every ResourceCard so the global
+   * AudioPlayerProvider can handle previous/next navigation.
+   */
+  const audioPlaylist = resources.filter((resource) =>
+    resource.media?.some(
+      (media) =>
+        media.type === "AUDIO" &&
+        Boolean(media.url),
+    ),
+  );
+
   return (
     <div className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
       {resources.map((resource) => (
         <ResourceCard
           key={resource.id}
           resource={resource}
+          audioPlaylist={audioPlaylist}
         />
       ))}
     </div>
