@@ -24,7 +24,7 @@ import type { MediaAsset, Resource } from "@/lib/api";
 
 import CustomAudioPlayer from "@/components/admin/resource-preview/CustomAudioPlayer";
 import ImagePreview from "@/components/admin/resource-preview/ImagePreview";
-// import PdfPreview from "@/components/admin/resource-preview/PdfPreview";
+import PdfPreview from "@/components/admin/resource-preview/PdfPreview";
 import YouTubePlayer from "@/components/admin/resource-preview/YouTubePlayer";
 
 interface ResourceCardProps {
@@ -597,16 +597,16 @@ export default function ResourceCard({
       quickView === "PDF" &&
       pdfMedia?.url
     ) {
-      // return (
-      //   // <PdfPreview
-      //   //   src={pdfMedia.url}
-      //   //   title={resource.title}
-      //   //   thumbnailUrl={
-      //   //     pdfMedia.thumbnailUrl ?? null
-      //   //   }
-      //   // />
+      return (
+        <PdfPreview
+          src={pdfMedia.url}
+          title={resource.title}
+          thumbnailUrl={
+            pdfMedia.thumbnailUrl ?? null
+          }
+        />
       
-      // );
+      );
     }
 
     if (quickView === "YOUTUBE") {
