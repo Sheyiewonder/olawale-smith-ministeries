@@ -15,16 +15,15 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
   getDocument,
   GlobalWorkerOptions,
 } from "pdfjs-dist";
+
 import type {
   PDFDocumentProxy,
-  RenderTask,
 } from "pdfjs-dist";
-
-import "pdfjs-dist/web/pdf_viewer.css";
 
 GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -37,24 +36,48 @@ interface PdfPreviewProps {
   thumbnailUrl?: string | null;
 }
 
-interface PageDimension {
-  width: number;
-  height: number;
-}
+/*
+ * Keep the number of pages actively rendered very small.
+ *
+ * This is intentionally conservative for iPhone/Safari.
+ */
+const RENDER_BUFFER = 1;
 
-function sanitizeFilenameTitle(title: string): string {
+/*
+ * Conservative canvas resolution.
+ */
+const MAX_DPR_DESKTOP = 1.35;
+const MAX_DPR_MOBILE = 1.1;
+
+/*
+ * Approximate A4 portrait ratio.
+ *
+ * Used only as a temporary placeholder until an
+ * individual page is actually rendered.
+ */
+const DEFAULT_PAGE_RATIO = 210 / 297;
+
+function sanitizeFilenameTitle(
+  title: string,
+): string {
   return title
     .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "")
+    .replace(
+      /[<>:"/\\|?*\u0000-\u001F]/g,
+      "",
+    )
     .replace(/\s+/g, " ")
     .replace(/\.+$/, "")
     .slice(0, 180);
 }
 
-function getDownloadFilename(title?: string): string {
-  const sanitizedTitle = sanitizeFilenameTitle(
-    title?.trim() || "",
-  );
+function getDownloadFilename(
+  title?: string,
+): string {
+  const sanitizedTitle =
+    sanitizeFilenameTitle(
+      title?.trim() || "",
+    );
 
   if (sanitizedTitle) {
     return `${sanitizedTitle}.pdf`;
@@ -63,27 +86,10 @@ function getDownloadFilename(title?: string): string {
   return "document.pdf";
 }
 
-/*
- * Number of pages rendered around the currently
- * visible area.
- */
-const RENDER_BUFFER = 2;
-
-/*
- * PDF.js canvas operations are deliberately kept
- * conservative for mobile Safari.
- */
-const MAX_CANVAS_DPR_DESKTOP = 1.5;
-const MAX_CANVAS_DPR_MOBILE = 1.25;
-
-/*
- * Fallback page ratio used only until the real PDF
- * page dimensions have been measured.
- *
- * This is approximately the ratio of an A4 portrait
- * page.
- */
-const DEFAULT_PAGE_RATIO = 210 / 297;
+interface PageRatio {
+  width: number;
+  height: number;
+}
 
 export default function PdfPreview({
   src,
@@ -118,81 +124,68 @@ export default function PdfPreview({
     useState(0);
 
   /*
-   * Stores the actual dimensions of each PDF page.
+   * Only stores numeric page dimensions.
    *
-   * These dimensions are used to create stable
-   * placeholder heights before a canvas is rendered.
+   * Unlike the previous implementation, we DON'T
+   * fetch every page just to populate this object.
    *
-   * Importantly, this stores only numbers — not
-   * PDFPageProxy objects.
+   * A page is added here only after it is actually
+   * needed for rendering.
    */
-  const [pageDimensions, setPageDimensions] =
-    useState<
-      Record<number, PageDimension>
+  const [pageRatios, setPageRatios] =
+    useState<Record<number, PageRatio>>(
+      {},
+    );
+
+  /*
+   * Page wrapper references.
+   */
+  const pageHostRefs =
+    useRef<
+      Record<number, HTMLDivElement | null>
     >({});
 
   /*
-   * React owns all page wrapper elements.
-   *
-   * Refs are used only for measurement/canvas access.
+   * Canvas references.
    */
-  const pageHostRefs =
-    useRef<Record<number, HTMLDivElement | null>>(
-      {},
-    );
-
   const canvasRefs =
-    useRef<Record<number, HTMLCanvasElement | null>>(
-      {},
-    );
+    useRef<
+      Record<number, HTMLCanvasElement | null>
+    >({});
 
   const canvasContainerRef =
     useRef<HTMLDivElement | null>(null);
 
   /*
-   * Only the PDF document is retained.
+   * The PDF document itself.
    *
-   * Individual PDFPageProxy objects are fetched when
-   * needed and are not stored here.
+   * No PDFPageProxy objects are retained.
    */
   const pdfDocumentRef =
     useRef<PDFDocumentProxy | null>(null);
 
   /*
-   * Active PDF.js render tasks.
-   */
-  const renderTasksRef =
-    useRef<Record<number, RenderTask | null>>(
-      {},
-    );
-
-  /*
-   * Pages currently being rendered.
+   * Active rendering page numbers.
    */
   const renderingPagesRef =
     useRef<Set<number>>(new Set());
 
   /*
-   * Pages whose canvases have successfully rendered.
+   * Pages whose canvas has successfully rendered.
    */
   const renderedPagesRef =
     useRef<Set<number>>(new Set());
 
   /*
-   * Protects against stale async rendering work.
+   * Prevents stale asynchronous work from touching
+   * a newer PDF/render generation.
    */
-  const renderGenerationRef =
+  const generationRef =
     useRef(0);
 
-  /*
-   * Latest zoom value available to async callbacks.
-   */
   const zoomRef =
     useRef(zoom);
 
-  /*
-   * Latest measured container width.
-   */
   const containerWidthRef =
     useRef(containerWidth);
 
@@ -212,81 +205,43 @@ export default function PdfPreview({
   }, [containerWidth]);
 
   /* ------------------------------------------------------------------------ */
-  /* Cancel all active renders                                                */
-  /* ------------------------------------------------------------------------ */
-
-  const cancelAllRenderTasks =
-    useCallback(() => {
-      for (const pageNumber of Object.keys(
-        renderTasksRef.current,
-      )) {
-        const numericPage =
-          Number(pageNumber);
-
-        const task =
-          renderTasksRef.current[
-            numericPage
-          ];
-
-        if (task) {
-          try {
-            task.cancel();
-          } catch {
-            // Ignore cancellation failures.
-          }
-        }
-
-        renderTasksRef.current[
-          numericPage
-        ] = null;
-      }
-
-      renderingPagesRef.current.clear();
-    }, []);
-
-  /* ------------------------------------------------------------------------ */
-  /* Clear rendered canvas                                                    */
+  /* Clear one canvas                                                         */
   /* ------------------------------------------------------------------------ */
 
   const clearCanvas =
-    useCallback((pageNumber: number) => {
-      const canvas =
-        canvasRefs.current[
-          pageNumber
-        ];
+    useCallback(
+      (pageNumber: number) => {
+        const canvas =
+          canvasRefs.current[
+            pageNumber
+          ];
 
-      if (!canvas) {
+        if (!canvas) {
+          renderedPagesRef.current.delete(
+            pageNumber,
+          );
+
+          return;
+        }
+
+        /*
+         * Release the backing canvas memory.
+         */
+        canvas.width = 1;
+        canvas.height = 1;
+
+        canvas.style.width = "0px";
+        canvas.style.height = "0px";
+
         renderedPagesRef.current.delete(
           pageNumber,
         );
-
-        return;
-      }
-
-      const context =
-        canvas.getContext("2d");
-
-      if (context) {
-        context.clearRect(
-          0,
-          0,
-          canvas.width,
-          canvas.height,
-        );
-      }
-
-      canvas.width = 0;
-      canvas.height = 0;
-      canvas.style.width = "0px";
-      canvas.style.height = "0px";
-
-      renderedPagesRef.current.delete(
-        pageNumber,
-      );
-    }, []);
+      },
+      [],
+    );
 
   /* ------------------------------------------------------------------------ */
-  /* Measure PDF container width                                              */
+  /* Measure container                                                        */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -308,10 +263,12 @@ export default function PdfPreview({
 
     updateWidth();
 
-    const resizeObserver =
-      new ResizeObserver(updateWidth);
+    const observer =
+      new ResizeObserver(
+        updateWidth,
+      );
 
-    resizeObserver.observe(element);
+    observer.observe(element);
 
     window.addEventListener(
       "resize",
@@ -319,7 +276,7 @@ export default function PdfPreview({
     );
 
     return () => {
-      resizeObserver.disconnect();
+      observer.disconnect();
 
       window.removeEventListener(
         "resize",
@@ -340,7 +297,7 @@ export default function PdfPreview({
         setLoading(false);
         setDocumentReady(false);
         setPageCount(0);
-        setPageDimensions({});
+        setPageRatios({});
         return;
       }
 
@@ -350,18 +307,31 @@ export default function PdfPreview({
       setPageCount(0);
       setCurrentPage(1);
       setContainerWidth(0);
-      setPageDimensions({});
+      setPageRatios({});
 
-      renderGenerationRef.current += 1;
+      generationRef.current += 1;
 
-      cancelAllRenderTasks();
+      /*
+       * Release references to the previous document.
+       */
+      const previousPdf =
+        pdfDocumentRef.current;
 
       pdfDocumentRef.current = null;
 
-      pageHostRefs.current = {};
-      canvasRefs.current = {};
+      if (previousPdf) {
+        try {
+          await previousPdf.cleanup();
+        } catch {
+          // Ignore cleanup failures.
+        }
+      }
 
       renderedPagesRef.current.clear();
+      renderingPagesRef.current.clear();
+
+      pageHostRefs.current = {};
+      canvasRefs.current = {};
 
       try {
         const loadingTask =
@@ -385,7 +355,10 @@ export default function PdfPreview({
 
         pdfDocumentRef.current = pdf;
 
-        setPageCount(pdf.numPages);
+        setPageCount(
+          pdf.numPages,
+        );
+
         setCurrentPage(1);
         setDocumentReady(true);
         setLoading(false);
@@ -402,7 +375,7 @@ export default function PdfPreview({
         setLoading(false);
         setDocumentReady(false);
         setPageCount(0);
-        setPageDimensions({});
+        setPageRatios({});
 
         setPreviewError(
           "The PDF could not be loaded for preview.",
@@ -415,151 +388,31 @@ export default function PdfPreview({
     return () => {
       cancelled = true;
 
-      renderGenerationRef.current += 1;
-
-      cancelAllRenderTasks();
+      generationRef.current += 1;
 
       const pdf =
         pdfDocumentRef.current;
 
       pdfDocumentRef.current = null;
 
-      /*
-       * cleanup() is used instead of destroy()
-       * because the installed PDF.js runtime/types
-       * are not exposing destroy consistently.
-       */
-      if (pdf) {
-        void pdf.cleanup().catch(() => {
-          // Ignore cleanup failures.
-        });
-      }
+      renderedPagesRef.current.clear();
+      renderingPagesRef.current.clear();
 
       pageHostRefs.current = {};
       canvasRefs.current = {};
 
-      renderedPagesRef.current.clear();
-      renderingPagesRef.current.clear();
-      renderTasksRef.current = {};
+      if (pdf) {
+        void pdf
+          .cleanup()
+          .catch(() => {
+            // Ignore cleanup failures.
+          });
+      }
     };
-  }, [
-    src,
-    cancelAllRenderTasks,
-  ]);
+  }, [src]);
 
   /* ------------------------------------------------------------------------ */
-  /* Measure page dimensions                                                  */
-  /* ------------------------------------------------------------------------ */
-
-  useEffect(() => {
-    if (
-      !documentReady ||
-      pageCount <= 0
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function measurePages() {
-      const pdf =
-        pdfDocumentRef.current;
-
-      if (!pdf) {
-        return;
-      }
-
-      const measuredDimensions: Record<
-        number,
-        PageDimension
-      > = {};
-
-      /*
-       * Fetch page metadata only.
-       *
-       * No canvases are created and no page render
-       * operations happen here.
-       *
-       * This gives every wrapper a stable aspect ratio
-       * before visual rendering begins.
-       */
-      for (
-        let pageNumber = 1;
-        pageNumber <= pageCount;
-        pageNumber += 1
-      ) {
-        if (cancelled) {
-          return;
-        }
-
-        try {
-          const page =
-            await pdf.getPage(
-              pageNumber,
-            );
-
-          if (cancelled) {
-            return;
-          }
-
-          const viewport =
-            page.getViewport({
-              scale: 1,
-            });
-
-          if (
-            Number.isFinite(
-              viewport.width,
-            ) &&
-            Number.isFinite(
-              viewport.height,
-            ) &&
-            viewport.width > 0 &&
-            viewport.height > 0
-          ) {
-            measuredDimensions[
-              pageNumber
-            ] = {
-              width:
-                viewport.width,
-              height:
-                viewport.height,
-            };
-          }
-        } catch (error) {
-          console.warn(
-            `Failed to measure PDF page ${pageNumber}:`,
-            error,
-          );
-        }
-      }
-
-      if (
-        cancelled ||
-        Object.keys(
-          measuredDimensions,
-        ).length === 0
-      ) {
-        return;
-      }
-
-      setPageDimensions(
-        measuredDimensions,
-      );
-    }
-
-    void measurePages();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    documentReady,
-    pageCount,
-  ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Calculate available width                                                */
+  /* Available page width                                                     */
   /* ------------------------------------------------------------------------ */
 
   const getAvailableWidth =
@@ -571,6 +424,10 @@ export default function PdfPreview({
         return 0;
       }
 
+      /*
+       * px-3 on mobile = 12px each side.
+       * px-6 on desktop = 24px each side.
+       */
       const horizontalPadding =
         window.matchMedia(
           "(min-width: 640px)",
@@ -580,26 +437,26 @@ export default function PdfPreview({
 
       return Math.max(
         width - horizontalPadding,
-        280,
+        240,
       );
     }, []);
 
   /* ------------------------------------------------------------------------ */
-  /* Calculate placeholder page height                                        */
+  /* Placeholder height                                                       */
   /* ------------------------------------------------------------------------ */
 
-  const getPagePlaceholderHeight =
+  const getPageHeight =
     useCallback(
       (pageNumber: number) => {
-        const availableWidth =
+        const width =
           getAvailableWidth();
 
-        if (availableWidth <= 0) {
+        if (width <= 0) {
           return 420;
         }
 
         const dimensions =
-          pageDimensions[
+          pageRatios[
             pageNumber
           ];
 
@@ -612,32 +469,22 @@ export default function PdfPreview({
             : 1 /
               DEFAULT_PAGE_RATIO;
 
-        const width =
-          Math.max(
-            availableWidth,
-            280,
-          ) *
-          zoom;
-
-        /*
-         * Add the vertical spacing around the page
-         * so the wrapper occupies exactly the same
-         * footprint as the eventual canvas.
-         */
         return Math.max(
-          120,
-          width * ratio,
+          320,
+          width *
+            ratio *
+            zoom,
         );
       },
       [
         getAvailableWidth,
-        pageDimensions,
+        pageRatios,
         zoom,
       ],
     );
 
   /* ------------------------------------------------------------------------ */
-  /* Calculate visible page range                                              */
+  /* Determine visible page range                                             */
   /* ------------------------------------------------------------------------ */
 
   const getVisiblePageRange =
@@ -666,7 +513,7 @@ export default function PdfPreview({
         container.clientHeight;
 
       let firstVisible = 1;
-      let lastVisible = pageCount;
+      let lastVisible = 1;
 
       let foundFirst = false;
 
@@ -688,7 +535,8 @@ export default function PdfPreview({
           element.offsetTop;
 
         const bottom =
-          top + element.offsetHeight;
+          top +
+          element.offsetHeight;
 
         if (
           !foundFirst &&
@@ -725,7 +573,7 @@ export default function PdfPreview({
     }, [pageCount]);
 
   /* ------------------------------------------------------------------------ */
-  /* Render a single page                                                     */
+  /* Render one page                                                          */
   /* ------------------------------------------------------------------------ */
 
   const renderPage =
@@ -736,7 +584,7 @@ export default function PdfPreview({
       ) => {
         if (
           generation !==
-          renderGenerationRef.current
+          generationRef.current
         ) {
           return;
         }
@@ -769,12 +617,7 @@ export default function PdfPreview({
           pageNumber,
         );
 
-        let page:
-          Awaited<
-            ReturnType<
-              PDFDocumentProxy["getPage"]
-            >
-          > | null = null;
+        let page = null;
 
         try {
           page =
@@ -784,15 +627,8 @@ export default function PdfPreview({
 
           if (
             generation !==
-            renderGenerationRef.current
+            generationRef.current
           ) {
-            return;
-          }
-
-          const availableWidth =
-            getAvailableWidth();
-
-          if (availableWidth <= 0) {
             return;
           }
 
@@ -805,8 +641,51 @@ export default function PdfPreview({
             !Number.isFinite(
               baseViewport.width,
             ) ||
-            baseViewport.width <= 0
+            !Number.isFinite(
+              baseViewport.height,
+            ) ||
+            baseViewport.width <= 0 ||
+            baseViewport.height <= 0
           ) {
+            return;
+          }
+
+          /*
+           * Store dimensions only for this page.
+           */
+          setPageRatios(
+            (previous) => {
+              const existing =
+                previous[
+                  pageNumber
+                ];
+
+              if (
+                existing &&
+                existing.width ===
+                  baseViewport.width &&
+                existing.height ===
+                  baseViewport.height
+              ) {
+                return previous;
+              }
+
+              return {
+                ...previous,
+                [pageNumber]: {
+                  width:
+                    baseViewport.width,
+                  height:
+                    baseViewport.height,
+                },
+              };
+            },
+          );
+
+          const availableWidth =
+            getAvailableWidth();
+
+          if (availableWidth <= 0) {
             return;
           }
 
@@ -831,70 +710,84 @@ export default function PdfPreview({
               "(max-width: 639px)",
             ).matches;
 
-          const maxDpr =
-            isMobile
-              ? MAX_CANVAS_DPR_MOBILE
-              : MAX_CANVAS_DPR_DESKTOP;
-
-          const devicePixelRatio =
+          const dpr =
             Math.min(
               window.devicePixelRatio ||
                 1,
-              maxDpr,
+              isMobile
+                ? MAX_DPR_MOBILE
+                : MAX_DPR_DESKTOP,
             );
 
           /*
-           * Conservative limits for mobile Safari.
+           * Hard mobile safety cap.
            */
-          const MAX_CANVAS_DIMENSION =
+          const MAX_PIXELS =
             isMobile
-              ? 4096
-              : 6144;
+              ? 12_000_000
+              : 24_000_000;
 
-          const pixelWidth =
-            Math.min(
-              Math.max(
-                1,
-                Math.floor(
-                  viewport.width *
-                    devicePixelRatio,
-                ),
+          let pixelWidth =
+            Math.max(
+              1,
+              Math.floor(
+                viewport.width *
+                  dpr,
               ),
-              MAX_CANVAS_DIMENSION,
             );
 
-          const pixelHeight =
-            Math.min(
-              Math.max(
-                1,
-                Math.floor(
-                  viewport.height *
-                    devicePixelRatio,
-                ),
+          let pixelHeight =
+            Math.max(
+              1,
+              Math.floor(
+                viewport.height *
+                  dpr,
               ),
-              MAX_CANVAS_DIMENSION,
             );
 
           /*
-           * Cancel any previous render for this page.
+           * Prevent enormous canvas allocations.
            */
-          const previousTask =
-            renderTasksRef.current[
-              pageNumber
-            ];
+          const pixelCount =
+            pixelWidth *
+            pixelHeight;
 
-          if (previousTask) {
-            try {
-              previousTask.cancel();
-            } catch {
-              // Ignore cancellation failures.
-            }
+          if (
+            pixelCount >
+            MAX_PIXELS
+          ) {
+            const reduction =
+              Math.sqrt(
+                MAX_PIXELS /
+                  pixelCount,
+              );
+
+            pixelWidth =
+              Math.max(
+                1,
+                Math.floor(
+                  pixelWidth *
+                    reduction,
+                ),
+              );
+
+            pixelHeight =
+              Math.max(
+                1,
+                Math.floor(
+                  pixelHeight *
+                    reduction,
+                ),
+              );
           }
 
           const context =
-            canvas.getContext("2d", {
-              alpha: false,
-            });
+            canvas.getContext(
+              "2d",
+              {
+                alpha: false,
+              },
+            );
 
           if (!context) {
             return;
@@ -931,37 +824,30 @@ export default function PdfPreview({
             canvas.height,
           );
 
-          const renderContext = {
-            canvas,
-            canvasContext: context,
-            viewport,
-            transform:
-              devicePixelRatio !== 1
-                ? [
-                    devicePixelRatio,
-                    0,
-                    0,
-                    devicePixelRatio,
-                    0,
-                    0,
-                  ]
-                : undefined,
-          };
-
           const renderTask =
-            page.render(
-              renderContext,
-            );
-
-          renderTasksRef.current[
-            pageNumber
-          ] = renderTask;
+            page.render({
+              canvas,
+              canvasContext:
+                context,
+              viewport,
+              transform:
+                dpr !== 1
+                  ? [
+                      dpr,
+                      0,
+                      0,
+                      dpr,
+                      0,
+                      0,
+                    ]
+                  : undefined,
+            });
 
           await renderTask.promise;
 
           if (
             generation !==
-            renderGenerationRef.current
+            generationRef.current
           ) {
             return;
           }
@@ -970,13 +856,10 @@ export default function PdfPreview({
             pageNumber,
           );
         } catch (error) {
-          /*
-           * Cancellation is expected during scrolling,
-           * zooming, resize, or unmounting.
-           */
           if (
             error &&
-            typeof error === "object" &&
+            typeof error ===
+              "object" &&
             "name" in error &&
             error.name ===
               "RenderingCancelledException"
@@ -986,7 +869,7 @@ export default function PdfPreview({
 
           if (
             generation !==
-            renderGenerationRef.current
+            generationRef.current
           ) {
             return;
           }
@@ -1000,15 +883,29 @@ export default function PdfPreview({
             pageNumber,
           );
 
-          renderTasksRef.current[
-            pageNumber
-          ] = null;
-
           /*
-           * We intentionally do not retain the page
-           * proxy. PDF.js remains responsible for the
-           * document/page cache.
+           * Explicitly release the page proxy if supported.
            */
+          if (
+            page &&
+            typeof (
+              page as {
+                cleanup?: () => void;
+              }
+            ).cleanup ===
+              "function"
+          ) {
+            try {
+              (
+                page as {
+                  cleanup: () => void;
+                }
+              ).cleanup();
+            } catch {
+              // Ignore page cleanup failures.
+            }
+          }
+
           page = null;
         }
       },
@@ -1016,7 +913,7 @@ export default function PdfPreview({
     );
 
   /* ------------------------------------------------------------------------ */
-  /* Render only pages near viewport                                           */
+  /* Render visible pages                                                     */
   /* ------------------------------------------------------------------------ */
 
   const renderVisiblePages =
@@ -1030,57 +927,12 @@ export default function PdfPreview({
       }
 
       const generation =
-        renderGenerationRef.current;
+        generationRef.current;
 
       const {
         first,
         last,
       } = getVisiblePageRange();
-
-      /*
-       * Cancel pages that have moved outside the
-       * render window.
-       */
-      for (
-        const pageNumber of Object.keys(
-          renderTasksRef.current,
-        )
-      ) {
-        const numericPage =
-          Number(pageNumber);
-
-        if (
-          numericPage < first ||
-          numericPage > last
-        ) {
-          const task =
-            renderTasksRef.current[
-              numericPage
-            ];
-
-          if (task) {
-            try {
-              task.cancel();
-            } catch {
-              // Ignore cancellation failures.
-            }
-          }
-
-          renderTasksRef.current[
-            numericPage
-          ] = null;
-
-          renderingPagesRef.current.delete(
-            numericPage,
-          );
-        }
-      }
-
-      const container =
-        canvasContainerRef.current;
-
-      const scrollTop =
-        container?.scrollTop ?? 0;
 
       const pageNumbers =
         Array.from(
@@ -1093,46 +945,17 @@ export default function PdfPreview({
         );
 
       /*
-       * Nearest page first.
+       * Render sequentially.
+       *
+       * This is intentional.
+       *
+       * Parallel PDF.js canvas rendering is more
+       * memory-hungry on mobile Safari.
        */
-      pageNumbers.sort(
-        (a, b) => {
-          const aElement =
-            pageHostRefs.current[a];
-
-          const bElement =
-            pageHostRefs.current[b];
-
-          if (
-            !aElement ||
-            !bElement
-          ) {
-            return 0;
-          }
-
-          const aDistance =
-            Math.abs(
-              aElement.offsetTop -
-                scrollTop,
-            );
-
-          const bDistance =
-            Math.abs(
-              bElement.offsetTop -
-                scrollTop,
-            );
-
-          return (
-            aDistance -
-            bDistance
-          );
-        },
-      );
-
       for (const pageNumber of pageNumbers) {
         if (
           generation !==
-          renderGenerationRef.current
+          generationRef.current
         ) {
           return;
         }
@@ -1161,7 +984,7 @@ export default function PdfPreview({
     ]);
 
   /* ------------------------------------------------------------------------ */
-  /* Render when document/container becomes ready                             */
+  /* Initial rendering                                                        */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -1174,12 +997,12 @@ export default function PdfPreview({
     }
 
     const frame =
-      window.requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
         void renderVisiblePages();
       });
 
     return () => {
-      window.cancelAnimationFrame(
+      cancelAnimationFrame(
         frame,
       );
     };
@@ -1191,7 +1014,7 @@ export default function PdfPreview({
   ]);
 
   /* ------------------------------------------------------------------------ */
-  /* Re-render pages after zoom                                                */
+  /* Zoom                                                                     */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -1203,13 +1026,10 @@ export default function PdfPreview({
       return;
     }
 
-    renderGenerationRef.current += 1;
-
-    cancelAllRenderTasks();
+    generationRef.current += 1;
 
     /*
-     * Copy the Set before clearing canvases because
-     * clearCanvas() removes pages from the Set.
+     * Release existing canvas backing stores.
      */
     const renderedPages =
       Array.from(
@@ -1217,20 +1037,19 @@ export default function PdfPreview({
       );
 
     renderedPages.forEach(
-      (pageNumber) => {
-        clearCanvas(pageNumber);
-      },
+      clearCanvas,
     );
 
     renderedPagesRef.current.clear();
+    renderingPagesRef.current.clear();
 
     const frame =
-      window.requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
         void renderVisiblePages();
       });
 
     return () => {
-      window.cancelAnimationFrame(
+      cancelAnimationFrame(
         frame,
       );
     };
@@ -1239,7 +1058,6 @@ export default function PdfPreview({
     documentReady,
     pageCount,
     containerWidth,
-    cancelAllRenderTasks,
     clearCanvas,
     renderVisiblePages,
   ]);
@@ -1251,15 +1069,15 @@ export default function PdfPreview({
   useEffect(() => {
     if (
       !documentReady ||
-      pageCount === 0
+      pageCount <= 0
     ) {
       return;
     }
 
-    const scrollElement =
+    const element =
       canvasContainerRef.current;
 
-    if (!scrollElement) {
+    if (!element) {
       return;
     }
 
@@ -1278,11 +1096,10 @@ export default function PdfPreview({
       const scrollTop =
         container.scrollTop;
 
-      const scrollPosition =
-        scrollTop + 24;
+      const position =
+        scrollTop + 32;
 
       let closestPage = 1;
-
       let closestDistance =
         Number.POSITIVE_INFINITY;
 
@@ -1291,19 +1108,19 @@ export default function PdfPreview({
         pageNumber <= pageCount;
         pageNumber += 1
       ) {
-        const pageElement =
+        const page =
           pageHostRefs.current[
             pageNumber
           ];
 
-        if (!pageElement) {
+        if (!page) {
           continue;
         }
 
         const distance =
           Math.abs(
-            pageElement.offsetTop -
-              scrollPosition,
+            page.offsetTop -
+              position,
           );
 
         if (
@@ -1319,10 +1136,10 @@ export default function PdfPreview({
       }
 
       setCurrentPage(
-        (previousPage) =>
-          previousPage ===
+        (previous) =>
+          previous ===
           closestPage
-            ? previousPage
+            ? previous
             : closestPage,
       );
     }
@@ -1334,16 +1151,14 @@ export default function PdfPreview({
 
       ticking = true;
 
-      window.requestAnimationFrame(
-        () => {
-          updateCurrentPage();
+      requestAnimationFrame(() => {
+        updateCurrentPage();
 
-          void renderVisiblePages();
-        },
-      );
+        void renderVisiblePages();
+      });
     }
 
-    scrollElement.addEventListener(
+    element.addEventListener(
       "scroll",
       handleScroll,
       {
@@ -1354,7 +1169,7 @@ export default function PdfPreview({
     updateCurrentPage();
 
     return () => {
-      scrollElement.removeEventListener(
+      element.removeEventListener(
         "scroll",
         handleScroll,
       );
@@ -1396,7 +1211,7 @@ export default function PdfPreview({
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Download PDF                                                             */
+  /* Download                                                                 */
   /* ------------------------------------------------------------------------ */
 
   async function downloadPdf() {
@@ -1507,15 +1322,12 @@ export default function PdfPreview({
   return (
     <div className="overflow-hidden rounded-2xl border bg-muted/20 shadow-sm">
       <div className="relative w-full">
-        {/* ---------------------------------------------------------------- */}
-        {/* Toolbar                                                          */}
-        {/* ---------------------------------------------------------------- */}
+        {/* Toolbar */}
 
         <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-black/5 bg-background/90 px-4 py-3 backdrop-blur-xl sm:px-7">
           <div className="flex min-w-0 items-center gap-2">
             <div className="inline-flex shrink-0 items-center gap-2 rounded-full bg-bronze px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg">
               <FileText size={13} />
-
               PDF
             </div>
 
@@ -1528,7 +1340,7 @@ export default function PdfPreview({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {/* Desktop zoom controls */}
+            {/* Desktop zoom */}
 
             <div className="hidden items-center gap-1 rounded-full border border-bronze/30 bg-white/80 p-1 shadow-sm sm:flex">
               <button
@@ -1615,9 +1427,7 @@ export default function PdfPreview({
           </div>
         </div>
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Loading state                                                    */}
-        {/* ---------------------------------------------------------------- */}
+        {/* Loading */}
 
         {loading && (
           <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
@@ -1640,63 +1450,59 @@ export default function PdfPreview({
           </div>
         )}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Preview error                                                    */}
-        {/* ---------------------------------------------------------------- */}
+        {/* Error */}
 
-        {!loading && previewError && (
-          <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <FileText size={24} />
+        {!loading &&
+          previewError && (
+            <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                <FileText size={24} />
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold">
+                  PDF preview unavailable
+                </p>
+
+                <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+                  {previewError}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={openPdf}
+                  className="inline-flex items-center gap-2 rounded-full bg-bronze px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory"
+                >
+                  <ExternalLink size={14} />
+                  Open PDF
+                </button>
+
+                <button
+                  type="button"
+                  onClick={downloadPdf}
+                  disabled={downloading}
+                  className="inline-flex items-center gap-2 rounded-full border border-bronze/30 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition hover:border-bronze hover:text-bronze disabled:opacity-60"
+                >
+                  {downloading ? (
+                    <Loader2
+                      size={14}
+                      className="animate-spin"
+                    />
+                  ) : (
+                    <Download size={14} />
+                  )}
+
+                  {downloading
+                    ? "Downloading..."
+                    : "Download PDF"}
+                </button>
+              </div>
             </div>
+          )}
 
-            <div>
-              <p className="text-sm font-semibold">
-                PDF preview unavailable
-              </p>
-
-              <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
-                {previewError}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={openPdf}
-                className="inline-flex items-center gap-2 rounded-full bg-bronze px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory transition hover:bg-bronze"
-              >
-                <ExternalLink size={14} />
-
-                Open PDF
-              </button>
-
-              <button
-                type="button"
-                onClick={downloadPdf}
-                disabled={downloading}
-                className="inline-flex items-center gap-2 rounded-full border border-bronze/30 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {downloading ? (
-                  <Loader2
-                    size={14}
-                    className="animate-spin"
-                  />
-                ) : (
-                  <Download size={14} />
-                )}
-
-                {downloading
-                  ? "Downloading..."
-                  : "Download PDF"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ---------------------------------------------------------------- */}
-        {/* PDF pages                                                        */}
-        {/* ---------------------------------------------------------------- */}
+        {/* PDF */}
 
         {!loading &&
           !previewError &&
@@ -1718,8 +1524,8 @@ export default function PdfPreview({
                     const pageNumber =
                       index + 1;
 
-                    const pageHeight =
-                      getPagePlaceholderHeight(
+                    const height =
+                      getPageHeight(
                         pageNumber,
                       );
 
@@ -1731,13 +1537,10 @@ export default function PdfPreview({
                             pageNumber
                           ] = element;
                         }}
-                        data-page={
-                          pageNumber
-                        }
                         className="mb-5 flex w-full justify-center last:mb-0"
                         style={{
                           minHeight:
-                            `${pageHeight}px`,
+                            `${height}px`,
                         }}
                       >
                         <canvas
@@ -1757,9 +1560,7 @@ export default function PdfPreview({
             </div>
           )}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Mobile zoom controls                                             */}
-        {/* ---------------------------------------------------------------- */}
+        {/* Mobile controls */}
 
         {!loading &&
           !previewError &&
@@ -1769,7 +1570,7 @@ export default function PdfPreview({
                 type="button"
                 onClick={zoomOut}
                 disabled={zoom <= 0.6}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:opacity-40"
                 aria-label="Zoom out"
               >
                 <Minus size={14} />
@@ -1790,7 +1591,7 @@ export default function PdfPreview({
                 type="button"
                 onClick={zoomIn}
                 disabled={zoom >= 2.5}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:opacity-40"
                 aria-label="Zoom in"
               >
                 <Plus size={14} />
@@ -1798,9 +1599,7 @@ export default function PdfPreview({
             </div>
           )}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Download error                                                  */}
-        {/* ---------------------------------------------------------------- */}
+        {/* Download error */}
 
         {downloadError && (
           <div className="absolute bottom-4 left-4 right-4 z-40 rounded-xl border border-destructive/20 bg-background/95 p-3 text-center shadow-sm backdrop-blur">

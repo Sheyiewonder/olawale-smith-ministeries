@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   ArrowDownToLine,
   ArrowUpRight,
@@ -24,13 +25,25 @@ import type { MediaAsset, Resource } from "@/lib/api";
 
 import CustomAudioPlayer from "@/components/admin/resource-preview/CustomAudioPlayer";
 import ImagePreview from "@/components/admin/resource-preview/ImagePreview";
-import PdfPreview from "@/components/admin/resource-preview/PdfPreview";
+// import PdfPreview from "@/components/admin/resource-preview/PdfPreview";
 import YouTubePlayer from "@/components/admin/resource-preview/YouTubePlayer";
 
 interface ResourceCardProps {
   resource: Resource;
   audioPlaylist?: Resource[];
 }
+
+const PdfPreview = dynamic(
+  () => import("@/components/admin/resource-preview/PdfPreview"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[420px] items-center justify-center">
+        Loading PDF viewer...
+      </div>
+    ),
+  },
+);
 
 const typeLabels: Record<Resource["type"], string> = {
   SERMON: "Sermon",
