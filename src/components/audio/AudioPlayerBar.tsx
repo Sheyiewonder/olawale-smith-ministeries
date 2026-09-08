@@ -254,7 +254,7 @@ export default function AudioPlayerBar() {
             }}
           />
 
-          {/* Invisible range input */}
+          {/* Invisible / transparent range input */}
 
           <input
             type="range"
@@ -280,6 +280,7 @@ export default function AudioPlayerBar() {
               cursor-pointer
               appearance-none
               bg-transparent
+              accent-transparent
               disabled:cursor-default
             "
           />
@@ -657,6 +658,10 @@ export default function AudioPlayerBar() {
                   backdrop-blur-xl
                 "
               >
+                {/* ------------------------------------------------------ */}
+                {/* Visual volume track                                     */}
+                {/* ------------------------------------------------------ */}
+
                 <div className="relative h-20 w-5">
 
                   {/* Track */}
@@ -693,7 +698,7 @@ export default function AudioPlayerBar() {
                     }}
                   />
 
-                  {/* Native range control */}
+                  {/* Invisible range input */}
 
                   <input
                     type="range"
@@ -710,7 +715,6 @@ export default function AudioPlayerBar() {
                     }
                     aria-label="Volume"
                     className="
-                      volume-slider
                       absolute
                       left-1/2
                       top-1/2
@@ -722,12 +726,35 @@ export default function AudioPlayerBar() {
                       cursor-pointer
                       appearance-none
                       bg-transparent
+                      accent-transparent
                     "
                     style={{
                       writingMode:
                         "vertical-lr",
                       direction:
                         "rtl",
+                    }}
+                  />
+
+                  {/* Volume thumb */}
+
+                  <div
+                    className="
+                      pointer-events-none
+                      absolute
+                      left-1/2
+                      z-20
+                      h-3
+                      w-3
+                      -translate-x-1/2
+                      rounded-full
+                      bg-bronze
+                      shadow-[0_1px_5px_rgba(0,0,0,0.20)]
+                      ring-2
+                      ring-ivory
+                    "
+                    style={{
+                      bottom: `calc(${volumeProgress}% - 6px)`,
                     }}
                   />
                 </div>
@@ -1238,7 +1265,7 @@ export default function AudioPlayerBar() {
                       }}
                     />
 
-                    {/* Native range control */}
+                    {/* Invisible range input */}
 
                     <input
                       type="range"
@@ -1255,7 +1282,6 @@ export default function AudioPlayerBar() {
                       }
                       aria-label="Volume"
                       className="
-                        volume-slider
                         absolute
                         left-1/2
                         top-1/2
@@ -1267,12 +1293,35 @@ export default function AudioPlayerBar() {
                         cursor-pointer
                         appearance-none
                         bg-transparent
+                        accent-transparent
                       "
                       style={{
                         writingMode:
                           "vertical-lr",
                         direction:
                           "rtl",
+                      }}
+                    />
+
+                    {/* Volume thumb */}
+
+                    <div
+                      className="
+                        pointer-events-none
+                        absolute
+                        left-1/2
+                        z-20
+                        h-3
+                        w-3
+                        -translate-x-1/2
+                        rounded-full
+                        bg-bronze
+                        shadow-[0_1px_5px_rgba(0,0,0,0.20)]
+                        ring-2
+                        ring-ivory
+                      "
+                      style={{
+                        bottom: `calc(${volumeProgress}% - 6px)`,
                       }}
                     />
                   </div>
@@ -1360,61 +1409,6 @@ export default function AudioPlayerBar() {
           </div>
         </div>
       </div>
-
-      {/* ================================================================== */}
-      {/* RANGE INPUT THUMB STYLING                                         */}
-      {/* ================================================================== */}
-
-      <style jsx global>{`
-        .volume-slider::-webkit-slider-runnable-track {
-          background: transparent;
-          height: 100%;
-        }
-
-        .volume-slider::-webkit-slider-thumb {
-          appearance: none;
-          -webkit-appearance: none;
-          width: 12px;
-          height: 12px;
-          margin-top: 0;
-          border: 2px solid var(--ivory, #f5f0e6);
-          border-radius: 9999px;
-          background: #9b6b3d;
-          box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
-          cursor: pointer;
-        }
-
-        .volume-slider::-moz-range-track {
-          background: transparent;
-          border: 0;
-        }
-
-        .volume-slider::-moz-range-thumb {
-          width: 12px;
-          height: 12px;
-          border: 2px solid #f5f0e6;
-          border-radius: 9999px;
-          background: #9b6b3d;
-          box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
-          cursor: pointer;
-        }
-
-        .volume-slider:focus {
-          outline: none;
-        }
-
-        .volume-slider:focus-visible::-webkit-slider-thumb {
-          box-shadow:
-            0 0 0 3px rgba(155, 107, 61, 0.18),
-            0 1px 5px rgba(0, 0, 0, 0.2);
-        }
-
-        .volume-slider:focus-visible::-moz-range-thumb {
-          box-shadow:
-            0 0 0 3px rgba(155, 107, 61, 0.18),
-            0 1px 5px rgba(0, 0, 0, 0.2);
-        }
-      `}</style>
     </div>
   );
 }
