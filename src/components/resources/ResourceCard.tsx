@@ -130,6 +130,10 @@ async function downloadMedia(
 
   const blob = await response.blob();
 
+  if (!blob.size) {
+    throw new Error("Downloaded resource is empty.");
+  }
+
   const objectUrl = URL.createObjectURL(blob);
 
   const anchor = document.createElement("a");
@@ -142,12 +146,12 @@ async function downloadMedia(
   );
 
   document.body.appendChild(anchor);
-
   anchor.click();
-
   anchor.remove();
 
-  URL.revokeObjectURL(objectUrl);
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 1000);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -162,7 +166,9 @@ function getMedia(
 }
 
 function getYouTubeId(media: MediaAsset | null) {
-  if (!media) return null;
+  if (!media) {
+    return null;
+  }
 
   if (media.externalId) {
     return media.externalId;
@@ -180,7 +186,9 @@ function getYouTubeId(media: MediaAsset | null) {
 }
 
 function isYouTubeUrl(url?: string | null) {
-  if (!url) return false;
+  if (!url) {
+    return false;
+  }
 
   try {
     const hostname = new URL(url).hostname.toLowerCase();
@@ -303,7 +311,7 @@ export default function ResourceCard({
   const isCurrentAudio =
     Boolean(audioMedia?.url) &&
     currentItem?.resource.id === resource.id &&
-    currentItem?.media.id === audioMedia.id;
+    currentItem?.media.id === audioMedia?.id;
 
   /* ------------------------------------------------------------------------ */
   /* Audio playlist                                                            */
@@ -348,13 +356,23 @@ export default function ResourceCard({
   /* ------------------------------------------------------------------------ */
 
   async function handleBackgroundPlay() {
-    if (!audioMedia?.url) {
+    /*
+     * IMPORTANT:
+     * Use a local variable for the null check.
+     *
+     * TypeScript cannot always preserve the narrowing of
+     * the memoized `audioMedia` value across the async
+     * function boundary.
+     */
+    const playableAudio = getAudioMedia(resource);
+
+    if (!playableAudio?.url) {
       return;
     }
 
     await play(
       resource,
-      audioMedia,
+      playableAudio,
       resolvedAudioPlaylist,
     );
   }
@@ -449,9 +467,7 @@ export default function ResourceCard({
     mode: QuickViewMode,
   ) {
     closeMenu();
-
     setDownloadError(null);
-
     setQuickView(mode);
   }
 
@@ -494,7 +510,6 @@ export default function ResourceCard({
 
     try {
       setDownloadError(null);
-
       setDownloading(true);
 
       await downloadMedia(
@@ -517,7 +532,9 @@ export default function ResourceCard({
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
-    if (!quickView) return;
+    if (!quickView) {
+      return;
+    }
 
     function handleKeyDown(
       event: KeyboardEvent,
@@ -597,7 +614,9 @@ export default function ResourceCard({
         youtubeMedia?.externalId ||
         "";
 
-      if (!youtubeUrl) return null;
+      if (!youtubeUrl) {
+        return null;
+      }
 
       return (
         <YouTubePlayer
