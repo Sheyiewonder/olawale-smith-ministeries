@@ -617,6 +617,7 @@ export default function ResourceCard({
           thumbnailUrl={
             pdfMedia.thumbnailUrl ?? null
           }
+          pageCount={pdfMedia.pageCount}
         />
       
       );

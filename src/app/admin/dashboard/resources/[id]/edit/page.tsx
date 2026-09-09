@@ -22,7 +22,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
   type ReactNode,
 } from "react";
 
@@ -40,7 +39,6 @@ import {
 } from "@/lib/admin-api";
 
 import ResourceMediaPreview from "@/components/admin/resource-preview/ResourceMediaPreview";
-
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -85,6 +83,13 @@ interface MediaItem {
   fileSize?: string;
   duration?: number;
 
+  /**
+   * Number of pages in an uploaded PDF.
+   *
+   * Only populated for PDF media.
+   */
+  pageCount?: number | null;
+
   uploading?: boolean;
   fileName?: string;
 
@@ -101,20 +106,19 @@ interface MediaItem {
    * Cloudinary-generated thumbnail.
    *
    * For PDFs:
-   *   This is the generated first-page preview.
+   * This is the generated first-page preview.
    *
    * For AUDIO:
-   *   This may contain a generated thumbnail,
-   *   but an explicitly uploaded audio thumbnail
-   *   takes priority.
+   * This may contain a generated thumbnail,
+   * but an explicitly uploaded audio thumbnail
+   * takes priority.
    */
   thumbnailUrl?: string | null;
 
   /**
    * Optional manually uploaded thumbnail.
    *
-   * Kept for compatibility with the existing
-   * audio thumbnail structure.
+   * Only AUDIO media uses this.
    */
   thumbnail?: ThumbnailItem;
 }
@@ -158,7 +162,9 @@ const mediaProviders: {
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function inferMediaType(file: File): MediaType {
+function inferMediaType(
+  file: File,
+): "AUDIO" | "PDF" | "IMAGE" | null {
   if (file.type.startsWith("audio/")) {
     return "AUDIO";
   }
@@ -171,28 +177,28 @@ function inferMediaType(file: File): MediaType {
     return "IMAGE";
   }
 
-  if (file.type.startsWith("video/")) {
-    return "VIDEO";
-  }
-
-  return "VIDEO";
+  return null;
 }
 
+/**
+ * Extract a YouTube video ID from a URL or return null.
+ *
+ * Supported:
+ * - youtube.com/watch?v=...
+ * - youtu.be/...
+ * - youtube.com/shorts/...
+ * - youtube.com/embed/...
+ */
 function getYouTubeId(
-  url?: string,
-  externalId?: string,
+  value: string,
 ): string | null {
-  if (externalId?.trim()) {
-    return externalId.trim();
-  }
+  const trimmed = value.trim();
 
-  if (!url?.trim()) {
+  if (!trimmed) {
     return null;
   }
 
-  const value = url.trim();
-
-  const match = value.match(
+  const match = trimmed.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([^?&/]+)/i,
   );
 
@@ -200,44 +206,43 @@ function getYouTubeId(
 }
 
 function getYouTubeEmbedUrl(
-  url?: string,
-  externalId?: string,
+  value: string,
 ): string | null {
-  const id = getYouTubeId(url, externalId);
+  const id = getYouTubeId(value);
 
   if (!id) {
     return null;
   }
 
-  return `https://www.youtube.com/embed/${id}`;
+  return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
 }
 
-function formatFileSize(value?: string): string {
-  const bytes = Number(value);
-
-  if (!Number.isFinite(bytes)) {
+function formatFileSize(
+  bytes?: string,
+): string {
+  if (!bytes) {
     return "";
   }
 
-  if (bytes < 1024) {
-    return `${bytes} B`;
+  const value = Number(bytes);
+
+  if (!Number.isFinite(value)) {
+    return "";
   }
 
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
+  if (value < 1024) {
+    return `${value} B`;
   }
 
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(
-      bytes /
-      (1024 * 1024)
-    ).toFixed(1)} MB`;
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
   }
 
-  return `${(
-    bytes /
-    (1024 * 1024 * 1024)
-  ).toFixed(1)} GB`;
+  if (value < 1024 * 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function slugify(value: string) {
@@ -354,10 +359,20 @@ export default function EditResourcePage() {
   const [showSuccess, setShowSuccess] =
     useState(false);
 
+  /**
+   * Each media editor owns one hidden file input.
+   *
+   * The parent stores the actual DOM element
+   * for each media index.
+   */
   const fileInputs = useRef<
     Record<number, HTMLInputElement | null>
   >({});
 
+  /**
+   * Each audio media editor owns one hidden
+   * thumbnail input.
+   */
   const thumbnailInputs = useRef<
     Record<number, HTMLInputElement | null>
   >({});
@@ -452,21 +467,15 @@ export default function EditResourcePage() {
   function populateResource(
     resource: AdminResource,
   ) {
-    setTitle(
-      resource.title ?? "",
-    );
+    setTitle(resource.title ?? "");
 
-    setSlug(
-      resource.slug ?? "",
-    );
+    setSlug(resource.slug ?? "");
 
     setDescription(
       resource.description ?? "",
     );
 
-    setContent(
-      resource.content ?? "",
-    );
+    setContent(resource.content ?? "");
 
     setType(
       resource.type ?? "SERMON",
@@ -510,8 +519,7 @@ export default function EditResourcePage() {
 
           type: item.type,
 
-          provider:
-            item.provider,
+          provider: item.provider,
 
           title:
             item.title ?? "",
@@ -542,17 +550,21 @@ export default function EditResourcePage() {
               : undefined,
 
           /**
-           * IMPORTANT:
-           *
+           * Preserve the persisted PDF
+           * page count.
+           */
+          pageCount:
+            typeof item.pageCount ===
+            "number"
+              ? item.pageCount
+              : null,
+
+          /**
            * Preserve the Cloudinary-generated
-           * thumbnail returned by the backend.
+           * thumbnail.
            *
-           * For PDFs this is the generated
-           * first-page thumbnail.
-           *
-           * For audio it may be a generated
-           * thumbnail, while an explicit
-           * thumbnail object remains separate.
+           * For PDFs this is the first-page
+           * preview generated by the backend.
            */
           thumbnailUrl:
             item.thumbnailUrl ??
@@ -574,18 +586,14 @@ export default function EditResourcePage() {
     setTitle(value);
 
     if (!slug.trim()) {
-      setSlug(
-        slugify(value),
-      );
+      setSlug(slugify(value));
     }
   }
 
   function handleSlugChange(
     value: string,
   ) {
-    setSlug(
-      slugify(value),
-    );
+    setSlug(slugify(value));
   }
 
   function toggleCategory(
@@ -595,13 +603,9 @@ export default function EditResourcePage() {
       (current) =>
         current.includes(id)
           ? current.filter(
-              (item) =>
-                item !== id,
+              (item) => item !== id,
             )
-          : [
-              ...current,
-              id,
-            ],
+          : [...current, id],
     );
   }
 
@@ -620,6 +624,7 @@ export default function EditResourcePage() {
         externalId: "",
         uploading: false,
         thumbnailUrl: null,
+        pageCount: null,
       },
     ]);
   }
@@ -656,8 +661,7 @@ export default function EditResourcePage() {
     }
 
     if (
-      item?.thumbnail
-        ?.localPreviewUrl
+      item?.thumbnail?.localPreviewUrl
     ) {
       previewUrlsRef.current.delete(
         item.thumbnail.localPreviewUrl,
@@ -668,6 +672,9 @@ export default function EditResourcePage() {
       );
     }
 
+    delete fileInputs.current[index];
+    delete thumbnailInputs.current[index];
+
     setMedia((current) =>
       current.filter(
         (_, i) => i !== index,
@@ -676,7 +683,7 @@ export default function EditResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Device upload                                                            */
+  /* Main Device Upload                                                       */
   /* ------------------------------------------------------------------------ */
 
   async function handleFileUpload(
@@ -692,6 +699,13 @@ export default function EditResourcePage() {
     const mediaType =
       inferMediaType(file);
 
+    if (!mediaType) {
+      setError(
+        "This file type is not supported. Please upload an audio file, PDF, or image from your device.",
+      );
+      return;
+    }
+
     const existingItem =
       media[index];
 
@@ -699,9 +713,7 @@ export default function EditResourcePage() {
      * Revoke the old browser preview
      * before replacing the file.
      */
-    if (
-      existingItem?.localPreviewUrl
-    ) {
+    if (existingItem?.localPreviewUrl) {
       previewUrlsRef.current.delete(
         existingItem.localPreviewUrl,
       );
@@ -723,12 +735,15 @@ export default function EditResourcePage() {
      * thumbnail until the new Cloudinary
      * upload succeeds.
      *
-     * We only clear the thumbnail after
-     * successful replacement.
+     * We also preserve the old PDF page count
+     * until the replacement upload succeeds.
      */
     const previousThumbnailUrl =
       existingItem?.thumbnailUrl ??
       null;
+
+    const previousPageCount =
+      existingItem?.pageCount ?? null;
 
     /**
      * Immediately update the UI.
@@ -739,13 +754,11 @@ export default function EditResourcePage() {
     updateMedia(index, {
       type: mediaType,
 
-      provider:
-        "CLOUDINARY",
+      provider: "CLOUDINARY",
 
       uploading: true,
 
-      fileName:
-        file.name,
+      fileName: file.name,
 
       localPreviewUrl,
 
@@ -753,24 +766,19 @@ export default function EditResourcePage() {
 
       externalId: "",
 
-      storageKey:
-        undefined,
+      storageKey: undefined,
 
-      mimeType:
-        file.type,
+      mimeType: file.type,
 
-      fileSize:
-        String(file.size),
+      fileSize: String(file.size),
 
-      duration:
-        undefined,
+      duration: undefined,
+
+      pageCount: null,
 
       /**
-       * Do not carry over the old thumbnail
-       * into the temporary upload state.
-       *
-       * For an existing PDF, the previous
-       * thumbnail is restored if the upload fails.
+       * Preserve old generated thumbnail
+       * temporarily for PDF/AUDIO.
        */
       thumbnailUrl:
         mediaType === "PDF" ||
@@ -778,6 +786,10 @@ export default function EditResourcePage() {
           ? previousThumbnailUrl
           : null,
 
+      /**
+       * Preserve manually uploaded artwork
+       * while replacing an AUDIO file.
+       */
       thumbnail:
         mediaType === "AUDIO"
           ? existingItem?.thumbnail
@@ -785,27 +797,10 @@ export default function EditResourcePage() {
     });
 
     try {
-      /**
-       * VIDEO uploads are not supported by the
-       * current backend upload API.
-       *
-       * Videos should use YouTube.
-       */
-      if (
-        mediaType === "VIDEO"
-      ) {
-        throw new Error(
-          "Video files cannot be uploaded from the device. Please use a YouTube URL for video resources.",
-        );
-      }
-
       const uploaded =
         await uploadAdminMedia(
           file,
-          mediaType as
-            | "AUDIO"
-            | "PDF"
-            | "IMAGE",
+          mediaType,
         );
 
       /**
@@ -813,17 +808,11 @@ export default function EditResourcePage() {
        *
        * Replace the temporary browser URL
        * with the permanent Cloudinary URL.
-       *
-       * IMPORTANT:
-       *
-       * The backend now returns thumbnailUrl
-       * for PDF uploads, so we preserve it here.
        */
       updateMedia(index, {
         type: mediaType,
 
-        provider:
-          "CLOUDINARY",
+        provider: "CLOUDINARY",
 
         uploading: false,
 
@@ -846,20 +835,33 @@ export default function EditResourcePage() {
         duration:
           uploaded.data.duration,
 
+        /**
+         * Persist the newly uploaded
+         * PDF page count.
+         */
+        pageCount:
+          uploaded.data.pageCount ??
+          null,
+
+        /**
+         * Persist Cloudinary's generated
+         * thumbnail.
+         */
         thumbnailUrl:
           uploaded.data.thumbnailUrl ??
           null,
 
+        /**
+         * The permanent URL now exists,
+         * so the browser preview is no longer
+         * needed.
+         */
         localPreviewUrl:
           undefined,
 
         /**
-         * A newly uploaded PDF/image/audio
-         * replaces the previous media file.
-         *
-         * Only keep the manually uploaded
-         * audio thumbnail object when the
-         * media itself is still AUDIO.
+         * If the new media isn't AUDIO,
+         * discard the old audio artwork.
          */
         ...(mediaType !== "AUDIO"
           ? {
@@ -880,9 +882,8 @@ export default function EditResourcePage() {
       /**
        * Keep the local preview after failure.
        *
-       * Restore the previously persisted
-       * thumbnail so an upload failure does
-       * not destroy the existing preview.
+       * Restore the previous PDF metadata/
+       * thumbnail where appropriate.
        */
       updateMedia(index, {
         uploading: false,
@@ -891,17 +892,18 @@ export default function EditResourcePage() {
 
         url: "",
 
-        storageKey:
-          undefined,
+        storageKey: undefined,
 
-        mimeType:
-          file.type,
+        mimeType: file.type,
 
-        fileSize:
-          String(file.size),
+        fileSize: String(file.size),
 
-        duration:
-          undefined,
+        duration: undefined,
+
+        pageCount:
+          mediaType === "PDF"
+            ? previousPageCount
+            : null,
 
         thumbnailUrl:
           previousThumbnailUrl,
@@ -967,32 +969,27 @@ export default function EditResourcePage() {
       thumbnail: {
         type: "IMAGE",
 
-        provider:
-          "CLOUDINARY",
+        provider: "CLOUDINARY",
 
-        title:
-          `${title || "Resource"} thumbnail`,
+        title: `${
+          title || "Resource"
+        } thumbnail`,
 
         url: "",
 
-        storageKey:
-          undefined,
+        storageKey: undefined,
 
-        mimeType:
-          file.type,
+        mimeType: file.type,
 
-        fileSize:
-          String(file.size),
+        fileSize: String(file.size),
 
         uploading: true,
 
-        fileName:
-          file.name,
+        fileName: file.name,
 
         localPreviewUrl,
 
-        thumbnailUrl:
-          null,
+        thumbnailUrl: null,
       },
     });
 
@@ -1007,11 +1004,11 @@ export default function EditResourcePage() {
         thumbnail: {
           type: "IMAGE",
 
-          provider:
-            "CLOUDINARY",
+          provider: "CLOUDINARY",
 
-          title:
-            `${title || "Resource"} thumbnail`,
+          title: `${
+            title || "Resource"
+          } thumbnail`,
 
           url:
             uploaded.data.secureUrl,
@@ -1031,8 +1028,7 @@ export default function EditResourcePage() {
 
           uploading: false,
 
-          fileName:
-            file.name,
+          fileName: file.name,
 
           thumbnailUrl:
             uploaded.data.thumbnailUrl ??
@@ -1041,7 +1037,7 @@ export default function EditResourcePage() {
 
         /**
          * The manually selected thumbnail
-         * becomes the primary thumbnail used
+         * is also the primary artwork used
          * by the audio player.
          */
         thumbnailUrl:
@@ -1060,27 +1056,23 @@ export default function EditResourcePage() {
         thumbnail: {
           type: "IMAGE",
 
-          provider:
-            "CLOUDINARY",
+          provider: "CLOUDINARY",
 
-          title:
-            `${title || "Resource"} thumbnail`,
+          title: `${
+            title || "Resource"
+          } thumbnail`,
 
           url: "",
 
-          storageKey:
-            undefined,
+          storageKey: undefined,
 
-          mimeType:
-            file.type,
+          mimeType: file.type,
 
-          fileSize:
-            String(file.size),
+          fileSize: String(file.size),
 
           uploading: false,
 
-          fileName:
-            file.name,
+          fileName: file.name,
 
           localPreviewUrl,
         },
@@ -1095,7 +1087,7 @@ export default function EditResourcePage() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Media validation                                                         */
+  /* Media Validation                                                         */
   /* ------------------------------------------------------------------------ */
 
   function validateMedia() {
@@ -1122,42 +1114,23 @@ export default function EditResourcePage() {
 
       const hasUrl =
         Boolean(
-          item.url?.trim(),
+          item.url.trim(),
         );
 
       const hasExternalId =
         Boolean(
-          item.externalId?.trim(),
-        );
-
-      const hasLocalPreview =
-        Boolean(
-          item.localPreviewUrl,
+          item.externalId.trim(),
         );
 
       /**
-       * Completely empty cards are ignored.
+       * Completely empty media cards
+       * are ignored.
        */
       if (
         !hasUrl &&
-        !hasExternalId &&
-        !hasLocalPreview
+        !hasExternalId
       ) {
         continue;
-      }
-
-      /**
-       * A Cloudinary item must have a permanent
-       * URL before it can be saved.
-       */
-      if (
-        item.provider ===
-          "CLOUDINARY" &&
-        !hasUrl
-      ) {
-        return `Media ${
-          i + 1
-        }: Please upload the selected file successfully before saving.`;
       }
 
       if (!item.type) {
@@ -1171,9 +1144,18 @@ export default function EditResourcePage() {
         "YOUTUBE"
       ) {
         if (
+          !hasUrl &&
+          !hasExternalId
+        ) {
+          return `Media ${
+            i + 1
+          }: Please provide a YouTube URL or video ID.`;
+        }
+
+        if (
           !getYouTubeId(
-            item.url,
-            item.externalId,
+            item.url ||
+              item.externalId,
           )
         ) {
           return `Media ${
@@ -1187,16 +1169,23 @@ export default function EditResourcePage() {
       }
 
       /**
-       * Audio thumbnail uploads must have
-       * finished before saving.
+       * AUDIO is the only media type
+       * that requires a manually supplied
+       * thumbnail.
        */
       if (
-        item.type === "AUDIO" &&
-        item.thumbnail?.uploading
+        item.type === "AUDIO"
       ) {
-        return `Media ${
-          i + 1
-        }: Please wait for the audio thumbnail upload to finish.`;
+        const hasThumbnail =
+          Boolean(
+            item.thumbnail?.url?.trim(),
+          );
+
+        if (!hasThumbnail) {
+          return `Media ${
+            i + 1
+          }: Please upload a thumbnail for this audio.`;
+        }
       }
     }
 
@@ -1243,7 +1232,8 @@ export default function EditResourcePage() {
 
     if (
       media.some(
-        (item) => item.uploading,
+        (item) =>
+          item.uploading,
       )
     ) {
       setError(
@@ -1255,7 +1245,8 @@ export default function EditResourcePage() {
     if (
       media.some(
         (item) =>
-          item.thumbnail?.uploading,
+          item.thumbnail
+            ?.uploading,
       )
     ) {
       setError(
@@ -1293,8 +1284,7 @@ export default function EditResourcePage() {
                 }
               : {}),
 
-            type:
-              item.type,
+            type: item.type,
 
             provider:
               item.provider,
@@ -1324,16 +1314,21 @@ export default function EditResourcePage() {
               item.duration,
 
             /**
-             * IMPORTANT:
+             * Persist PDF page count.
+             */
+            pageCount:
+              item.type === "PDF"
+                ? item.pageCount ??
+                  undefined
+                : undefined,
+
+            /**
+             * Persist Cloudinary-generated
+             * thumbnail URLs.
              *
-             * Persist the Cloudinary-generated
-             * thumbnail together with the media.
-             *
-             * For PDFs this is the first-page
-             * thumbnail generated by Cloudinary.
-             *
-             * For AUDIO, an explicitly uploaded
-             * thumbnail takes priority.
+             * For AUDIO, an explicitly
+             * uploaded thumbnail takes
+             * priority.
              */
             thumbnailUrl:
               item.type === "AUDIO"
@@ -1344,38 +1339,34 @@ export default function EditResourcePage() {
                   undefined,
           }));
 
-      const input: UpdateResourceInput =
-        {
-          title:
-            trimmedTitle,
+      const input: UpdateResourceInput = {
+        title: trimmedTitle,
 
-          slug:
-            trimmedSlug,
+        slug: trimmedSlug,
 
-          description:
-            description.trim() ||
-            undefined,
+        description:
+          description.trim() ||
+          undefined,
 
-          content:
-            content.trim() ||
-            undefined,
+        content:
+          content.trim() ||
+          undefined,
 
-          type,
+        type,
 
-          speaker:
-            speaker.trim() ||
-            undefined,
+        speaker:
+          speaker.trim() ||
+          undefined,
 
-          featured,
+        featured,
 
-          published,
+        published,
 
-          categoryIds:
-            selectedCategoryIds,
+        categoryIds:
+          selectedCategoryIds,
 
-          media:
-            cleanedMedia,
-        };
+        media: cleanedMedia,
+      };
 
       await updateResource(
         resourceId,
@@ -1440,6 +1431,7 @@ export default function EditResourcePage() {
               className="inline-flex items-center gap-2 bg-charcoal px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
             >
               <Loader2 size={14} />
+
               Try Again
             </button>
 
@@ -1448,6 +1440,7 @@ export default function EditResourcePage() {
               className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/60 transition-colors hover:border-charcoal/20 hover:text-charcoal"
             >
               <ArrowLeft size={14} />
+
               Back to Resources
             </Link>
           </div>
@@ -1462,15 +1455,14 @@ export default function EditResourcePage() {
 
   return (
     <main className="min-h-screen bg-ivory text-charcoal">
-      {/* Header -------------------------------------------------------------- */}
-
       <header className="border-b border-charcoal/10 bg-white">
         <div className="mx-auto max-w-[1400px] px-6 py-6 lg:px-10">
           <Link
             href="/admin/dashboard/resources"
-            className="mb-4 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/45 transition-colors hover:text-bronze"
+            className="mb-4 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/45 hover:text-bronze"
           >
             <ArrowLeft size={14} />
+
             Back to Resources
           </Link>
 
@@ -1483,9 +1475,10 @@ export default function EditResourcePage() {
           </h1>
 
           <p className="mt-2 max-w-xl text-sm leading-6 text-charcoal/45">
-            Update the resource details,
-            organization, publishing
-            status, and attached media.
+            Update the details, media,
+            categories, and publishing
+            settings for this ministry
+            resource.
           </p>
         </div>
       </header>
@@ -1496,7 +1489,9 @@ export default function EditResourcePage() {
           className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
           <div className="space-y-8">
-            {/* Basic Information -------------------------------------------- */}
+            {/* ---------------------------------------------------------------- */}
+            {/* Basic Information                                                */}
+            {/* ---------------------------------------------------------------- */}
 
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
@@ -1525,7 +1520,7 @@ export default function EditResourcePage() {
                 <Field
                   label="Slug"
                   required
-                  hint="Used in the public resource URL. Changing this may change the public URL."
+                  hint="Used in the public resource URL."
                 >
                   <input
                     value={slug}
@@ -1620,7 +1615,9 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {/* Categories ---------------------------------------------------- */}
+            {/* ---------------------------------------------------------------- */}
+            {/* Categories                                                        */}
+            {/* ---------------------------------------------------------------- */}
 
             <section className="border border-charcoal/10 bg-white">
               <SectionHead
@@ -1631,28 +1628,11 @@ export default function EditResourcePage() {
 
               <div className="p-6">
                 {categoriesLoading ? (
-                  <div className="flex items-center gap-3 py-6 text-sm text-charcoal/40">
-                    <Loader2
-                      size={16}
-                      className="animate-spin"
-                    />
-
-                    Loading categories...
-                  </div>
+                  <Loader2 className="animate-spin text-bronze" />
                 ) : categoriesError ? (
-                  <div className="border border-red-500/15 bg-red-500/[0.03] p-4">
-                    <p className="text-sm text-red-600">
-                      {categoriesError}
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={loadCategories}
-                      className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-bronze hover:underline"
-                    >
-                      Try again
-                    </button>
-                  </div>
+                  <p className="text-sm text-red-600">
+                    {categoriesError}
+                  </p>
                 ) : categories.length ===
                   0 ? (
                   <p className="border border-dashed border-charcoal/10 p-8 text-center text-sm text-charcoal/45">
@@ -1679,7 +1659,7 @@ export default function EditResourcePage() {
                                 category.id,
                               )
                             }
-                            className={`flex items-start gap-3 border p-4 text-left transition-all ${
+                            className={`flex items-start gap-3 border p-4 text-left ${
                               selected
                                 ? "border-bronze bg-bronze/[0.06]"
                                 : "border-charcoal/10 hover:border-bronze/40"
@@ -1689,7 +1669,7 @@ export default function EditResourcePage() {
                               className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border ${
                                 selected
                                   ? "border-bronze bg-bronze text-ivory"
-                                  : "border-charcoal/20 bg-white"
+                                  : "border-charcoal/20"
                               }`}
                             >
                               {selected && (
@@ -1697,21 +1677,18 @@ export default function EditResourcePage() {
                                   size={
                                     11
                                   }
-                                  strokeWidth={
-                                    2.5
-                                  }
                                 />
                               )}
                             </span>
 
-                            <span className="min-w-0">
+                            <span>
                               <span className="block text-xs font-medium">
                                 {
                                   category.name
                                 }
                               </span>
 
-                              <span className="mt-1 block truncate text-[10px] text-charcoal/35">
+                              <span className="mt-1 block text-[10px] text-charcoal/35">
                                 /
                                 {
                                   category.slug
@@ -1719,7 +1696,7 @@ export default function EditResourcePage() {
                               </span>
 
                               {category.description && (
-                                <span className="mt-2 block line-clamp-2 text-[11px] leading-5 text-charcoal/40">
+                                <span className="mt-2 block text-[11px] leading-5 text-charcoal/40">
                                   {
                                     category.description
                                   }
@@ -1749,7 +1726,9 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {/* Media --------------------------------------------------------- */}
+            {/* ---------------------------------------------------------------- */}
+            {/* Media                                                             */}
+            {/* ---------------------------------------------------------------- */}
 
             <section className="border border-charcoal/10 bg-white">
               <div className="flex items-center justify-between border-b border-charcoal/10 px-6 py-5">
@@ -1773,9 +1752,10 @@ export default function EditResourcePage() {
                 <button
                   type="button"
                   onClick={addMedia}
-                  className="inline-flex items-center gap-2 border border-charcoal/10 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors hover:border-bronze hover:text-bronze"
+                  className="inline-flex items-center gap-2 border border-charcoal/10 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] hover:border-bronze hover:text-bronze"
                 >
                   <Files size={14} />
+
                   Add Media
                 </button>
               </div>
@@ -1789,14 +1769,13 @@ export default function EditResourcePage() {
                     />
 
                     <p className="mt-4 text-sm text-charcoal/45">
-                      No media attached
-                      yet.
+                      No media attached yet.
                     </p>
 
                     <button
                       type="button"
                       onClick={addMedia}
-                      className="mt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze hover:underline"
+                      className="mt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze"
                     >
                       Add your first media
                     </button>
@@ -1806,24 +1785,28 @@ export default function EditResourcePage() {
                     {media.map(
                       (item, index) => (
                         <MediaEditor
-                          key={
-                            item.id ??
-                            `new-${index}`
-                          }
+                          key={index}
                           item={item}
                           index={index}
-                          resourceTitle={title}
                           fileInput={(element) => {
                             fileInputs.current[
                               index
                             ] = element;
                           }}
-                          thumbnailInput={(
-                            element,
-                          ) => {
+                          thumbnailInput={(element) => {
                             thumbnailInputs.current[
                               index
                             ] = element;
+                          }}
+                          onOpenFile={() => {
+                            fileInputs.current[
+                              index
+                            ]?.click();
+                          }}
+                          onOpenThumbnail={() => {
+                            thumbnailInputs.current[
+                              index
+                            ]?.click();
                           }}
                           onFile={(file) =>
                             handleFileUpload(
@@ -1831,9 +1814,7 @@ export default function EditResourcePage() {
                               file,
                             )
                           }
-                          onThumbnailFile={(
-                            file,
-                          ) =>
+                          onThumbnailFile={(file) =>
                             handleThumbnailUpload(
                               index,
                               file,
@@ -1845,6 +1826,7 @@ export default function EditResourcePage() {
                               patch,
                             )
                           }
+                          resourceTitle={title}
                           onRemove={() =>
                             removeMedia(
                               index,
@@ -1859,7 +1841,9 @@ export default function EditResourcePage() {
             </section>
           </div>
 
-          {/* Sidebar --------------------------------------------------------- */}
+          {/* ------------------------------------------------------------------ */}
+          {/* Sidebar                                                            */}
+          {/* ------------------------------------------------------------------ */}
 
           <aside className="space-y-6">
             <section className="border border-charcoal/10 bg-white">
@@ -1885,36 +1869,6 @@ export default function EditResourcePage() {
               </div>
             </section>
 
-            {selectedCategoryIds.length >
-              0 && (
-              <section className="border border-charcoal/10 bg-white p-6">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-bronze">
-                  Organization
-                </p>
-
-                <h2 className="mt-2 text-sm font-medium">
-                  Selected categories
-                </h2>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {categories
-                    .filter((category) =>
-                      selectedCategoryIds.includes(
-                        category.id,
-                      ),
-                    )
-                    .map((category) => (
-                      <span
-                        key={category.id}
-                        className="inline-flex items-center gap-1.5 bg-bronze/10 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-bronze"
-                      >
-                        {category.name}
-                      </span>
-                    ))}
-                </div>
-              </section>
-            )}
-
             {error && (
               <div className="border border-red-500/15 bg-red-500/[0.03] p-5 text-sm leading-6 text-red-600">
                 {error}
@@ -1928,9 +1882,10 @@ export default function EditResourcePage() {
                   setError("");
                   setShowPreview(true);
                 }}
-                className="flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors hover:border-bronze hover:text-bronze"
+                className="flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] hover:border-bronze hover:text-bronze"
               >
                 <Eye size={15} />
+
                 Preview Resource
               </button>
 
@@ -1945,7 +1900,7 @@ export default function EditResourcePage() {
                         ?.uploading,
                   )
                 }
-                className="group mt-3 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 group flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? (
                   <>
@@ -1953,16 +1908,17 @@ export default function EditResourcePage() {
                       size={15}
                       className="animate-spin"
                     />
+
                     Saving Changes...
                   </>
                 ) : (
                   <>
                     <Check size={15} />
+
                     Save Changes
 
                     <ArrowUpRight
                       size={14}
-                      className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
                     />
                   </>
                 )}
@@ -1970,9 +1926,10 @@ export default function EditResourcePage() {
 
               <Link
                 href="/admin/dashboard/resources"
-                className="mt-3 flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/55 transition-colors hover:border-charcoal/20 hover:text-charcoal"
+                className="mt-3 flex w-full items-center justify-center gap-2 border border-charcoal/10 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-charcoal/55"
               >
                 <X size={14} />
+
                 Cancel
               </Link>
             </section>
@@ -1980,7 +1937,9 @@ export default function EditResourcePage() {
         </form>
       </div>
 
-      {/* Preview ------------------------------------------------------------- */}
+      {/* ---------------------------------------------------------------------- */}
+      {/* Draft Preview                                                         */}
+      {/* ---------------------------------------------------------------------- */}
 
       {showPreview && (
         <PreviewDialog
@@ -1990,14 +1949,15 @@ export default function EditResourcePage() {
           type={type}
           speaker={speaker}
           media={media}
-          resourceTitle={title}
           onClose={() =>
             setShowPreview(false)
           }
         />
       )}
 
-      {/* Success ------------------------------------------------------------- */}
+      {/* ---------------------------------------------------------------------- */}
+      {/* Success                                                               */}
+      {/* ---------------------------------------------------------------------- */}
 
       {showSuccess && (
         <SuccessDialog
@@ -2019,13 +1979,15 @@ export default function EditResourcePage() {
 function MediaEditor({
   item,
   index,
-  resourceTitle,
   onUpdate,
   onRemove,
   onFile,
+  resourceTitle,
   onThumbnailFile,
   fileInput,
   thumbnailInput,
+  onOpenFile,
+  onOpenThumbnail,
 }: {
   item: MediaItem;
   index: number;
@@ -2045,13 +2007,29 @@ function MediaEditor({
     file?: File,
   ) => void;
 
+  /**
+   * Callback ref.
+   *
+   * The parent stores the actual
+   * HTMLInputElement for this media card.
+   */
   fileInput: (
     element: HTMLInputElement | null,
   ) => void;
 
+  /**
+   * Callback ref for the audio thumbnail
+   * input.
+   */
   thumbnailInput: (
     element: HTMLInputElement | null,
   ) => void;
+
+  /**
+   * Parent-controlled file picker actions.
+   */
+  onOpenFile: () => void;
+  onOpenThumbnail: () => void;
 }) {
   const icon =
     item.type === "AUDIO" ? (
@@ -2067,35 +2045,28 @@ function MediaEditor({
   const youtubeEmbed =
     item.provider === "YOUTUBE"
       ? getYouTubeEmbedUrl(
-          item.url,
-          item.externalId,
+          item.url ||
+            item.externalId,
         )
       : null;
 
-  const source =
-    item.url ||
-    item.localPreviewUrl ||
-    youtubeEmbed;
-
   /**
-   * Explicitly uploaded audio thumbnail
-   * takes priority over the media thumbnail.
+   * AUDIO thumbnail:
+   * manually uploaded artwork.
+   *
+   * PDF thumbnail:
+   * generated by Cloudinary.
    */
-  const audioThumbnail =
-    item.thumbnail?.url ||
-    item.thumbnail?.localPreviewUrl ||
-    item.thumbnailUrl ||
-    undefined;
-
-  /**
-   * PDF thumbnail comes directly from the
-   * media's Cloudinary thumbnailUrl.
-   */
-  const pdfThumbnail =
-    item.type === "PDF"
-      ? item.thumbnailUrl ||
+  const thumbnailUrl =
+    item.type === "AUDIO"
+      ? item.thumbnail?.url ||
+        item.thumbnail?.localPreviewUrl ||
+        item.thumbnailUrl ||
         undefined
-      : undefined;
+      : item.type === "PDF"
+        ? item.thumbnailUrl ||
+          undefined
+        : undefined;
 
   return (
     <div className="border border-charcoal/10 p-5">
@@ -2122,16 +2093,14 @@ function MediaEditor({
         <button
           type="button"
           onClick={onRemove}
-          className="flex h-8 w-8 items-center justify-center text-charcoal/30 transition-colors hover:bg-red-50 hover:text-red-500"
-          aria-label={`Remove media ${
-            index + 1
-          }`}
+          className="flex h-8 w-8 items-center justify-center text-charcoal/30 hover:bg-red-50 hover:text-red-500"
+          aria-label={`Remove media ${index + 1}`}
         >
           <Trash2 size={15} />
         </button>
       </div>
 
-      {/* Type / Provider ----------------------------------------------------- */}
+      {/* Type / Provider */}
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Media Type">
@@ -2145,10 +2114,29 @@ function MediaEditor({
               onUpdate({
                 type: nextType,
 
+                /**
+                 * Only AUDIO can have a
+                 * manually uploaded thumbnail.
+                 */
                 ...(nextType !==
                 "AUDIO"
                   ? {
                       thumbnail:
+                        undefined,
+                    }
+                  : {}),
+
+                /**
+                 * Generated thumbnails are
+                 * associated with PDFs.
+                 *
+                 * Clear them when changing
+                 * away from PDF.
+                 */
+                ...(nextType !==
+                "PDF"
+                  ? {
+                      thumbnailUrl:
                         undefined,
                     }
                   : {}),
@@ -2184,6 +2172,10 @@ function MediaEditor({
               onUpdate({
                 provider,
 
+                /**
+                 * YouTube uses externalId.
+                 * Other providers don't.
+                 */
                 externalId:
                   provider ===
                   "YOUTUBE"
@@ -2191,19 +2183,10 @@ function MediaEditor({
                     : "",
 
                 /**
-                 * When switching away from
-                 * Cloudinary, do not accidentally
-                 * keep a Cloudinary local file.
+                 * Preserve the existing
+                 * permanent URL.
                  */
-                ...(provider !==
-                "CLOUDINARY"
-                  ? {
-                      uploading:
-                        false,
-                      localPreviewUrl:
-                        undefined,
-                    }
-                  : {}),
+                url: item.url,
               });
             }}
             className="input"
@@ -2226,7 +2209,7 @@ function MediaEditor({
         </Field>
       </div>
 
-      {/* Title ---------------------------------------------------------------- */}
+      {/* Media Title */}
 
       <div className="mt-5">
         <Field label="Media Title">
@@ -2235,8 +2218,7 @@ function MediaEditor({
             onChange={(event) =>
               onUpdate({
                 title:
-                  event.target
-                    .value,
+                  event.target.value,
               })
             }
             placeholder="Walking in Purpose — Full Sermon"
@@ -2245,7 +2227,7 @@ function MediaEditor({
         </Field>
       </div>
 
-      {/* Device upload -------------------------------------------------------- */}
+      {/* Device Upload */}
 
       {item.provider ===
         "CLOUDINARY" && (
@@ -2257,22 +2239,18 @@ function MediaEditor({
               </p>
 
               <p className="mt-1 text-[11px] leading-5 text-charcoal/40">
-                Upload a new file to
-                Cloudinary. The upload
-                happens before the resource
-                changes are saved.
+                The file is uploaded
+                immediately through
+                the ministry API.
               </p>
             </div>
 
             <input
-              data-media-upload={index}
               ref={fileInput}
               type="file"
               className="hidden"
               accept="audio/*,image/*,application/pdf"
-              onChange={(
-                event: ChangeEvent<HTMLInputElement>,
-              ) => {
+              onChange={(event) => {
                 onFile(
                   event.target.files?.[0],
                 );
@@ -2284,25 +2262,15 @@ function MediaEditor({
 
             <button
               type="button"
-              disabled={
-                item.uploading
-              }
-              onClick={() =>
-                fileInput(
-                  document.querySelector<HTMLInputElement>(
-                    `input[data-media-upload="${index}"]`,
-                  ),
-                )
-              }
-              className="inline-flex items-center gap-2 bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={item.uploading}
+              onClick={onOpenFile}
+              className="inline-flex items-center gap-2 bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory disabled:opacity-50"
             >
               <Upload size={14} />
 
               {item.uploading
                 ? "Uploading..."
-                : item.url
-                  ? "Replace File"
-                  : "Choose File"}
+                : "Choose File"}
             </button>
           </div>
 
@@ -2312,8 +2280,7 @@ function MediaEditor({
                 {item.fileName}
               </p>
 
-              {item.fileSize !==
-                undefined && (
+              {item.fileSize && (
                 <span className="shrink-0 text-[10px] uppercase tracking-[0.1em] text-charcoal/30">
                   {formatFileSize(
                     item.fileSize,
@@ -2339,8 +2306,7 @@ function MediaEditor({
           {!item.uploading &&
             item.url && (
               <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.1em] text-green-700">
-                Media uploaded
-                successfully
+                Media uploaded successfully
               </p>
             )}
 
@@ -2348,135 +2314,176 @@ function MediaEditor({
             item.localPreviewUrl &&
             !item.url && (
               <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.1em] text-red-600">
-                Upload failed — the local
-                preview is still available.
+                Media upload failed —
+                the local preview is
+                still available.
                 Please retry.
               </p>
             )}
         </div>
       )}
 
-      {/* Audio thumbnail ----------------------------------------------------- */}
+      {/* -------------------------------------------------------------------- */}
+      {/* PDF Thumbnail                                                        */}
+      {/* -------------------------------------------------------------------- */}
 
-      {item.provider ===
-        "CLOUDINARY" &&
-        item.type ===
-          "AUDIO" && (
+      {item.type === "PDF" &&
+        item.provider ===
+          "CLOUDINARY" &&
+        item.thumbnailUrl && (
           <div className="mt-5 border border-charcoal/10 bg-charcoal/[0.02] p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
-                  Audio Thumbnail
-                </p>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
+                PDF Preview Thumbnail
+              </p>
 
-                <p className="mt-1 max-w-md text-[11px] leading-5 text-charcoal/40">
-                  Optional. This image is used
-                  as the visual background of
-                  the audio player.
-                </p>
-              </div>
-
-              <input
-                data-thumbnail-upload={
-                  index
-                }
-                ref={thumbnailInput}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(
-                  event,
-                ) => {
-                  onThumbnailFile(
-                    event.target.files?.[0],
-                  );
-
-                  event.currentTarget.value =
-                    "";
-                }}
-              />
-
-              <button
-                type="button"
-                disabled={
-                  item.thumbnail
-                    ?.uploading
-                }
-                onClick={() =>
-                  thumbnailInput(
-                    document.querySelector<HTMLInputElement>(
-                      `input[data-thumbnail-upload="${index}"]`,
-                    ),
-                  )
-                }
-                className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-charcoal transition-colors hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ImageIcon
-                  size={14}
-                />
-
-                {item.thumbnail
-                  ?.uploading
-                  ? "Uploading..."
-                  : audioThumbnail
-                    ? "Replace Thumbnail"
-                    : "Choose Thumbnail"}
-              </button>
+              <p className="mt-1 max-w-md text-[11px] leading-5 text-charcoal/40">
+                Automatically generated
+                from the first page of
+                the PDF.
+              </p>
             </div>
 
-            {audioThumbnail && (
-              <div className="mt-4 overflow-hidden border border-charcoal/10 bg-charcoal">
-                <img
-                  src={
-                    audioThumbnail
-                  }
-                  alt={
-                    item.title ||
-                    "Audio thumbnail"
-                  }
-                  className="max-h-64 w-full object-cover"
-                />
-              </div>
-            )}
-
-            {item.thumbnail
-              ?.uploading && (
-              <div className="mt-4">
-                <div className="h-1 overflow-hidden bg-charcoal/5">
-                  <div className="h-full w-1/2 animate-pulse bg-bronze" />
-                </div>
-
-                <p className="mt-2 text-[10px] text-charcoal/35">
-                  Uploading thumbnail
-                  to Cloudinary...
-                </p>
-              </div>
-            )}
-
-            {!item.thumbnail
-              ?.uploading &&
-              item.thumbnail?.url && (
-                <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.1em] text-green-700">
-                  Thumbnail uploaded
-                </p>
-              )}
-
-            {!item.thumbnail
-              ?.uploading &&
-              item.thumbnail
-                ?.localPreviewUrl &&
-              !item.thumbnail
-                ?.url && (
-                <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.1em] text-red-600">
-                  Thumbnail upload failed —
-                  the local preview is still
-                  available. Please retry.
-                </p>
-              )}
+            <div className="mt-4 overflow-hidden border border-charcoal/10 bg-charcoal">
+              <img
+                src={item.thumbnailUrl}
+                alt="PDF first page preview"
+                className="block max-h-[420px] w-full object-contain"
+              />
+            </div>
           </div>
         )}
 
-      {/* External / YouTube -------------------------------------------------- */}
+      {/* -------------------------------------------------------------------- */}
+      {/* Audio Thumbnail                                                      */}
+      {/* -------------------------------------------------------------------- */}
+
+      {item.type === "AUDIO" && (
+        <div className="mt-5 border border-charcoal/10 bg-charcoal/[0.02] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-bronze">
+                Audio Thumbnail
+                <span className="ml-1">
+                  *
+                </span>
+              </p>
+
+              <p className="mt-1 max-w-md text-[11px] leading-5 text-charcoal/40">
+                Upload the artwork that
+                will appear behind the
+                glass audio player.
+              </p>
+            </div>
+
+            <input
+              ref={thumbnailInput}
+              type="file"
+              className="hidden"
+              accept="image/*"
+              onChange={(event) => {
+                onThumbnailFile(
+                  event.target.files?.[0],
+                );
+
+                event.currentTarget.value =
+                  "";
+              }}
+            />
+
+            <button
+              type="button"
+              disabled={
+                item.thumbnail
+                  ?.uploading
+              }
+              onClick={
+                onOpenThumbnail
+              }
+              className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ImageIcon size={14} />
+
+              {item.thumbnail
+                ?.uploading
+                ? "Uploading..."
+                : item.thumbnail?.url
+                  ? "Replace Thumbnail"
+                  : "Upload Thumbnail"}
+            </button>
+          </div>
+
+          {item.thumbnail && (
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              {thumbnailUrl && (
+                <div className="h-16 w-24 overflow-hidden border border-charcoal/10 bg-charcoal">
+                  <img
+                    src={thumbnailUrl}
+                    alt="Audio thumbnail preview"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div className="min-w-0">
+                {item.thumbnail.fileName && (
+                  <p className="max-w-xs truncate text-xs text-charcoal/55">
+                    {
+                      item.thumbnail
+                        .fileName
+                    }
+                  </p>
+                )}
+
+                {item.thumbnail
+                  .fileSize && (
+                  <p className="mt-1 text-[10px] uppercase tracking-[0.1em] text-charcoal/30">
+                    {formatFileSize(
+                      item.thumbnail
+                        .fileSize,
+                    )}
+                  </p>
+                )}
+
+                {item.thumbnail
+                  .uploading && (
+                  <p className="mt-2 text-[10px] text-charcoal/35">
+                    Uploading thumbnail...
+                  </p>
+                )}
+
+                {!item.thumbnail
+                  .uploading &&
+                  item.thumbnail
+                    .url && (
+                    <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.1em] text-green-700">
+                      Thumbnail uploaded
+                    </p>
+                  )}
+
+                {!item.thumbnail
+                  .uploading &&
+                  item.thumbnail
+                    .localPreviewUrl &&
+                  !item.thumbnail
+                    .url && (
+                    <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.1em] text-red-600">
+                      Thumbnail upload
+                      failed — the local
+                      preview is still
+                      available. Please
+                      retry.
+                    </p>
+                  )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* -------------------------------------------------------------------- */}
+      {/* External / YouTube URL                                               */}
+      {/* -------------------------------------------------------------------- */}
 
       {item.provider !==
         "CLOUDINARY" && (
@@ -2497,8 +2504,7 @@ function MediaEditor({
                 onChange={(event) =>
                   onUpdate({
                     url:
-                      event.target
-                        .value,
+                      event.target.value,
                   })
                 }
                 placeholder={
@@ -2539,9 +2545,13 @@ function MediaEditor({
         </>
       )}
 
-      {/* Immediate Media Preview --------------------------------------------- */}
+      {/* -------------------------------------------------------------------- */}
+      {/* Immediate Media Preview                                              */}
+      {/* -------------------------------------------------------------------- */}
 
-      {source && (
+      {(item.url ||
+        item.localPreviewUrl ||
+        youtubeEmbed) && (
         <div className="mt-5 overflow-hidden border border-charcoal/10 bg-black">
           <ResourceMediaPreview
             media={item}
@@ -2550,9 +2560,10 @@ function MediaEditor({
             }
             thumbnailUrl={
               item.type === "AUDIO"
-                ? audioThumbnail
+                ? thumbnailUrl
                 : item.type === "PDF"
-                  ? pdfThumbnail
+                  ? item.thumbnailUrl ||
+                    undefined
                   : undefined
             }
             title={
@@ -2569,12 +2580,11 @@ function MediaEditor({
 }
 
 /* ========================================================================== */
-/* Preview Dialog                                                              */
+/* Draft Preview                                                              */
 /* ========================================================================== */
 
 function PreviewDialog({
   title,
-  resourceTitle,
   description,
   content,
   type,
@@ -2583,7 +2593,6 @@ function PreviewDialog({
   onClose,
 }: {
   title: string;
-  resourceTitle: string;
   description: string;
   content: string;
   type: ResourceType;
@@ -2602,7 +2611,7 @@ function PreviewDialog({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-charcoal/60 p-4 backdrop-blur-sm">
       <div className="mx-auto my-8 max-w-5xl overflow-hidden bg-white shadow-2xl">
-        {/* Header ------------------------------------------------------------ */}
+        {/* Header */}
 
         <div className="flex items-center justify-between border-b border-charcoal/10 px-6 py-5">
           <div>
@@ -2618,14 +2627,14 @@ function PreviewDialog({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center border border-charcoal/10 transition-colors hover:border-bronze hover:text-bronze"
+            className="flex h-9 w-9 items-center justify-center border border-charcoal/10 hover:border-bronze hover:text-bronze"
             aria-label="Close preview"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Content ----------------------------------------------------------- */}
+        {/* Content */}
 
         <div className="p-6 sm:p-10">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-bronze">
@@ -2671,14 +2680,9 @@ function PreviewDialog({
               {attachedMedia.map(
                 (item, index) => (
                   <PreviewMedia
-                    key={
-                      item.id ??
-                      `preview-${index}`
-                    }
+                    key={index}
                     media={item}
-                    resourceTitle={
-                      resourceTitle
-                    }
+                    resourceTitle={title}
                   />
                 ),
               )}
@@ -2701,16 +2705,6 @@ function PreviewMedia({
   media: MediaItem;
   resourceTitle: string;
 }) {
-  /**
-   * Audio:
-   *   Explicitly uploaded thumbnail wins.
-   *
-   * PDF:
-   *   Cloudinary-generated first-page thumbnail.
-   *
-   * Other media:
-   *   Use their own thumbnailUrl if one exists.
-   */
   const thumbnailUrl =
     media.type === "AUDIO"
       ? media.thumbnail?.url ||
@@ -2736,11 +2730,12 @@ function PreviewMedia({
         localPreviewUrl={
           media.localPreviewUrl
         }
-        thumbnailUrl={
-          thumbnailUrl
-        }
+        thumbnailUrl={thumbnailUrl}
         title={
-          resourceTitle
+          resourceTitle.trim() ||
+          media.title.trim() ||
+          media.fileName ||
+          "Resource media"
         }
       />
     </div>
@@ -2845,14 +2840,14 @@ function Toggle({
       className="flex w-full items-start gap-4 text-left"
     >
       <span
-        className={`relative mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+        className={`relative mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full ${
           checked
             ? "bg-bronze"
             : "bg-charcoal/15"
         }`}
       >
         <span
-          className={`absolute h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+          className={`absolute h-3.5 w-3.5 rounded-full bg-white shadow-sm ${
             checked
               ? "translate-x-[17px]"
               : "translate-x-[3px]"
@@ -2886,10 +2881,7 @@ function SuccessDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/40 px-6 backdrop-blur-sm">
       <div className="w-full max-w-md border border-charcoal/10 bg-white p-8 shadow-2xl">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 text-green-600">
-          <Check
-            size={25}
-            strokeWidth={2}
-          />
+          <Check size={25} />
         </div>
 
         <div className="mt-6 text-center">
@@ -2897,23 +2889,24 @@ function SuccessDialog({
             Resource Updated
           </p>
 
-          <h2 className="mt-2 text-2xl font-medium tracking-tight">
+          <h2 className="mt-2 text-2xl font-medium">
             Successfully updated
           </h2>
 
           <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-charcoal/45">
             The resource has been
-            successfully updated in
-            your ministry library.
+            updated in your ministry
+            library.
           </p>
         </div>
 
         <button
           type="button"
           onClick={onContinue}
-          className="mt-8 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory transition-colors hover:bg-bronze"
+          className="mt-8 flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory"
         >
           Continue to Resources
+
           <ArrowUpRight size={14} />
         </button>
       </div>

@@ -68,6 +68,13 @@ export interface MediaAsset {
   duration?: number | null;
 
   /**
+   * Number of pages in the media asset.
+   *
+   * Currently populated for uploaded PDF files.
+   */
+  pageCount?: number | null;
+
+  /**
    * Thumbnail generated/stored for this media asset.
    *
    * For PDFs, this is the persisted first-page thumbnail
@@ -203,15 +210,24 @@ export async function getResources(
   const params = new URLSearchParams();
 
   if (query.page !== undefined) {
-    params.set("page", String(query.page));
+    params.set(
+      "page",
+      String(query.page),
+    );
   }
 
   if (query.limit !== undefined) {
-    params.set("limit", String(query.limit));
+    params.set(
+      "limit",
+      String(query.limit),
+    );
   }
 
   if (query.type) {
-    params.set("type", query.type);
+    params.set(
+      "type",
+      query.type,
+    );
   }
 
   /*
@@ -219,10 +235,14 @@ export async function getResources(
    *
    * Empty or whitespace-only categories are ignored.
    */
-  const category = query.category?.trim();
+  const category =
+    query.category?.trim();
 
   if (category) {
-    params.set("category", category);
+    params.set(
+      "category",
+      category,
+    );
   }
 
   if (query.featured !== undefined) {
@@ -242,21 +262,30 @@ export async function getResources(
    * "   faith   " → "faith"
    * "      "      → no search parameter
    */
-  const search = query.search?.trim();
+  const search =
+    query.search?.trim();
 
   if (search) {
-    params.set("search", search);
+    params.set(
+      "search",
+      search,
+    );
   }
 
-  const queryString = params.toString();
+  const queryString =
+    params.toString();
 
-  const url = `${API_URL}/resources${
-    queryString ? `?${queryString}` : ""
-  }`;
+  const url =
+    `${API_URL}/resources${
+      queryString
+        ? `?${queryString}`
+        : ""
+    }`;
 
-  const response = await fetch(url, {
-    cache: "no-store",
-  });
+  const response =
+    await fetch(url, {
+      cache: "no-store",
+    });
 
   if (!response.ok) {
     throw new Error(
@@ -274,24 +303,30 @@ export async function getResources(
 export async function getResourceBySlug(
   slug: string,
 ): Promise<Resource> {
-  const normalizedSlug = slug.trim();
+  const normalizedSlug =
+    slug.trim();
 
   if (!normalizedSlug) {
-    throw new Error("Resource slug is required");
+    throw new Error(
+      "Resource slug is required",
+    );
   }
 
-  const response = await fetch(
-    `${API_URL}/resources/${encodeURIComponent(
-      normalizedSlug,
-    )}`,
-    {
-      cache: "no-store",
-    },
-  );
+  const response =
+    await fetch(
+      `${API_URL}/resources/${encodeURIComponent(
+        normalizedSlug,
+      )}`,
+      {
+        cache: "no-store",
+      },
+    );
 
   if (!response.ok) {
     if (response.status === 404) {
-      throw new Error("Resource not found");
+      throw new Error(
+        "Resource not found",
+      );
     }
 
     throw new Error(
@@ -318,7 +353,10 @@ export async function getResourceBySlug(
  * type === "ARTICLE"
  */
 export async function getArticles(
-  query: Omit<ResourceQuery, "type"> = {},
+  query: Omit<
+    ResourceQuery,
+    "type"
+  > = {},
 ): Promise<ResourcesResponse> {
   return getResources({
     ...query,
@@ -332,14 +370,16 @@ export async function getArticles(
 export async function getLatestArticles(
   limit = 3,
 ): Promise<Resource[]> {
-  const safeLimit = Math.min(
-    Math.max(1, limit),
-    50,
-  );
+  const safeLimit =
+    Math.min(
+      Math.max(1, limit),
+      50,
+    );
 
-  const response = await getArticles({
-    limit: safeLimit,
-  });
+  const response =
+    await getArticles({
+      limit: safeLimit,
+    });
 
   return response.data;
 }

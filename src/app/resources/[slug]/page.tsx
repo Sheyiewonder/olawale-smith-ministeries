@@ -277,6 +277,10 @@ interface ResourceMediaProps {
     title?: string | null;
     url?: string | null;
     externalId?: string | null;
+
+    // PDF metadata
+    pageCount?: number | null;
+    thumbnailUrl?: string | null;
   };
 
   resourceTitle: string;
@@ -393,23 +397,19 @@ function ResourceMedia({
    * PDF
    */
   if (media.type === "PDF") {
-    if (!media.url) {
-      return null;
-    }
-
-    return (
-      <PdfPreview
-        src={media.url}
-        title={resourceTitle}
-        thumbnailUrl={
-          "thumbnailUrl" in media
-            ? (media as { thumbnailUrl?: string | null })
-                .thumbnailUrl
-            : null
-        }
-      />
-    );
+  if (!media.url) {
+    return null;
   }
+
+  return (
+    <PdfPreview
+      src={media.url}
+      title={resourceTitle}
+      thumbnailUrl={media.thumbnailUrl ?? null}
+      pageCount={media.pageCount ?? null}
+    />
+  );
+}
 
   /*
    * Image

@@ -167,6 +167,13 @@ export interface AdminMedia {
   duration?: number | null;
 
   /*
+   * Number of pages in the uploaded PDF.
+   *
+   * Only populated for PDF media.
+   */
+  pageCount?: number | null;
+
+  /*
    * Media-specific thumbnail.
    *
    * PDF:
@@ -216,6 +223,13 @@ export interface CreateMediaInput {
   duration?: number;
 
   /*
+   * Number of pages in the uploaded PDF.
+   *
+   * Only applicable to PDF media.
+   */
+  pageCount?: number;
+
+  /*
    * Media-specific thumbnail.
    *
    * For PDFs:
@@ -249,6 +263,13 @@ export interface UpdateMediaInput {
   fileSize?: string | null;
 
   duration?: number | null;
+
+  /*
+   * Number of pages in the uploaded PDF.
+   *
+   * Only applicable to PDF media.
+   */
+  pageCount?: number | null;
 
   /*
    * Media-specific thumbnail.
@@ -348,7 +369,8 @@ export interface AdminResource {
    * Individual media assets belonging to
    * this resource.
    *
-   * A PDF can have its own thumbnailUrl.
+   * A PDF can have its own thumbnailUrl
+   * and pageCount.
    */
   media?: AdminMedia[];
 
@@ -426,13 +448,18 @@ export interface CreateResourceInput {
   seriesId?: string | null;
 
   /*
-   * Every media asset can have its own thumbnailUrl.
+   * Every media asset can have its own thumbnailUrl
+   * and, for PDFs, pageCount.
    *
    * PDF:
    *
    * media[].thumbnailUrl
    *       ↓
    * Cloudinary first-page JPG
+   *
+   * media[].pageCount
+   *       ↓
+   * Total number of PDF pages
    *
    * AUDIO:
    *
@@ -706,6 +733,13 @@ export interface UploadMediaResponse {
      * external URLs.
      */
     type: UploadableMediaType;
+
+    /*
+     * Number of pages in the uploaded PDF.
+     *
+     * Only populated for PDF uploads.
+     */
+    pageCount?: number;
 
     /*
      * Generated/associated media thumbnail.

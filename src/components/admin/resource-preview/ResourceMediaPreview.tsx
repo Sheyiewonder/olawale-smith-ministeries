@@ -204,6 +204,7 @@ export default function ResourceMediaPreview({
         src={url}
         title={pdfTitle}
         thumbnailUrl={media.thumbnailUrl ?? null}
+        pageCount={media.pageCount ?? null}
       />
     );
   }

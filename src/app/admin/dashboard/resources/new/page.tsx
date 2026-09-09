@@ -71,7 +71,14 @@ interface MediaItem {
   fileSize?: string;
   duration?: number;
 
-  /*
+  /**
+   * Number of pages in the uploaded PDF.
+   *
+   * Only populated for PDF media.
+   */
+  pageCount?: number | null;
+
+  /**
    * Cloudinary-generated thumbnail.
    *
    * Currently this is primarily used by PDF media.
@@ -83,27 +90,29 @@ interface MediaItem {
   uploading?: boolean;
   fileName?: string;
 
-  /*
+  /**
    * Temporary browser URL used while the permanent
    * Cloudinary upload is still processing.
    */
   localPreviewUrl?: string;
 
-  /*
+  /**
    * Only AUDIO media can have a manually uploaded thumbnail.
    */
   thumbnail?: ThumbnailItem;
 }
 
-/*
+/**
  * Resource-level thumbnail.
  *
  * This is still separate from media.thumbnailUrl.
  *
- * - AUDIO -> manually uploaded artwork can become the
- *   resource-level thumbnail.
- * - PDF -> thumbnailUrl belongs to the PDF MediaAsset itself.
- * - YouTube -> YouTube preview is handled by the media preview.
+ * AUDIO -> manually uploaded artwork can become the
+ * resource-level thumbnail.
+ *
+ * PDF -> thumbnailUrl belongs to the PDF MediaAsset itself.
+ *
+ * YouTube -> YouTube preview is handled by the media preview.
  */
 type CreateResourceWithThumbnailInput =
   CreateResourceInput & {
@@ -157,20 +166,7 @@ const mediaProviders: {
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function getYouTubeId(
-  url?: string,
-  externalId?: string,
-): string | null {
-  if (externalId?.trim()) {
-    return externalId.trim();
-  }
-
-  if (!url?.trim()) {
-    return null;
-  }
-
-  const value = url.trim();
-
+function getYouTubeId(value: string): string | null {
   const match = value.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([^?&/]+)/i,
   );
@@ -179,10 +175,9 @@ function getYouTubeId(
 }
 
 function getYouTubeEmbedUrl(
-  url?: string,
-  externalId?: string,
+  value: string,
 ): string | null {
-  const id = getYouTubeId(url, externalId);
+  const id = getYouTubeId(value);
 
   if (!id) {
     return null;
@@ -191,7 +186,16 @@ function getYouTubeEmbedUrl(
   return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
 }
 
-function inferMediaType(file: File): MediaType {
+/**
+ * Determine which media types can actually be uploaded
+ * from the administrator's device.
+ *
+ * VIDEO is intentionally excluded because video uploads
+ * are handled through YouTube/external providers.
+ */
+function inferMediaType(
+  file: File,
+): "AUDIO" | "PDF" | "IMAGE" | null {
   if (file.type.startsWith("audio/")) {
     return "AUDIO";
   }
@@ -204,10 +208,12 @@ function inferMediaType(file: File): MediaType {
     return "IMAGE";
   }
 
-  return "VIDEO";
+  return null;
 }
 
-function formatFileSize(bytes?: string): string {
+function formatFileSize(
+  bytes?: string,
+): string {
   if (!bytes) {
     return "";
   }
@@ -251,16 +257,21 @@ export default function NewResourcePage() {
 
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] =
+    useState("");
   const [content, setContent] = useState("");
 
   const [type, setType] =
     useState<ResourceType>("SERMON");
 
-  const [speaker, setSpeaker] = useState("");
+  const [speaker, setSpeaker] =
+    useState("");
 
-  const [featured, setFeatured] = useState(false);
-  const [published, setPublished] = useState(false);
+  const [featured, setFeatured] =
+    useState(false);
+
+  const [published, setPublished] =
+    useState(false);
 
   const [categories, setCategories] =
     useState<AdminCategory[]>([]);
@@ -295,6 +306,15 @@ export default function NewResourcePage() {
   const [showSuccess, setShowSuccess] =
     useState(false);
 
+  /**
+   * These refs are owned by the page.
+   *
+   * Each media editor receives a callback ref that stores
+   * its corresponding input element here.
+   *
+   * The actual .click() call happens against the stored
+   * HTMLInputElement, never against the callback ref itself.
+   */
   const fileInputs = useRef<
     Record<number, HTMLInputElement | null>
   >({});
@@ -319,7 +339,9 @@ export default function NewResourcePage() {
     getAdminCategories()
       .then((response) => {
         if (mounted) {
-          setCategories(response.data ?? []);
+          setCategories(
+            response.data ?? [],
+          );
         }
       })
       .catch((err) => {
@@ -348,21 +370,23 @@ export default function NewResourcePage() {
 
   useEffect(() => {
     return () => {
-      mediaRef.current.forEach((item) => {
-        if (item.localPreviewUrl) {
-          URL.revokeObjectURL(
-            item.localPreviewUrl,
-          );
-        }
+      mediaRef.current.forEach(
+        (item) => {
+          if (item.localPreviewUrl) {
+            URL.revokeObjectURL(
+              item.localPreviewUrl,
+            );
+          }
 
-        if (
-          item.thumbnail?.localPreviewUrl
-        ) {
-          URL.revokeObjectURL(
-            item.thumbnail.localPreviewUrl,
-          );
-        }
-      });
+          if (
+            item.thumbnail?.localPreviewUrl
+          ) {
+            URL.revokeObjectURL(
+              item.thumbnail.localPreviewUrl,
+            );
+          }
+        },
+      );
     };
   }, []);
 
@@ -370,7 +394,9 @@ export default function NewResourcePage() {
   /* Basic handlers                                                           */
   /* ------------------------------------------------------------------------ */
 
-  function handleTitleChange(value: string) {
+  function handleTitleChange(
+    value: string,
+  ) {
     setTitle(value);
 
     if (!slug.trim()) {
@@ -378,13 +404,16 @@ export default function NewResourcePage() {
     }
   }
 
-  function toggleCategory(id: string) {
-    setSelectedCategoryIds((current) =>
-      current.includes(id)
-        ? current.filter(
-            (item) => item !== id,
-          )
-        : [...current, id],
+  function toggleCategory(
+    id: string,
+  ) {
+    setSelectedCategoryIds(
+      (current) =>
+        current.includes(id)
+          ? current.filter(
+              (item) => item !== id,
+            )
+          : [...current, id],
     );
   }
 
@@ -417,7 +446,9 @@ export default function NewResourcePage() {
     );
   }
 
-  function removeMedia(index: number) {
+  function removeMedia(
+    index: number,
+  ) {
     const item = media[index];
 
     if (item?.localPreviewUrl) {
@@ -439,6 +470,9 @@ export default function NewResourcePage() {
         (_, i) => i !== index,
       ),
     );
+
+    delete fileInputs.current[index];
+    delete thumbnailInputs.current[index];
   }
 
   /* ------------------------------------------------------------------------ */
@@ -458,10 +492,29 @@ export default function NewResourcePage() {
     const mediaType =
       inferMediaType(file);
 
+    if (!mediaType) {
+      setError(
+        "Video files cannot be uploaded from the device. Please use YouTube for video resources.",
+      );
+      return;
+    }
+
+    /**
+     * If this card already has a temporary local preview,
+     * release it before creating the replacement.
+     */
+    const previousItem = media[index];
+
+    if (previousItem?.localPreviewUrl) {
+      URL.revokeObjectURL(
+        previousItem.localPreviewUrl,
+      );
+    }
+
     const localPreviewUrl =
       URL.createObjectURL(file);
 
-    /*
+    /**
      * Update the card immediately.
      *
      * This gives the administrator an instant local
@@ -480,7 +533,14 @@ export default function NewResourcePage() {
       storageKey: undefined,
       duration: undefined,
 
-      /*
+      /**
+       * PDF page count belongs to the uploaded PDF.
+       *
+       * Clear any previous value when replacing media.
+       */
+      pageCount: undefined,
+
+      /**
        * Clear any previous Cloudinary-generated thumbnail
        * when replacing the actual media file.
        *
@@ -489,7 +549,7 @@ export default function NewResourcePage() {
        */
       thumbnailUrl: undefined,
 
-      /*
+      /**
        * A thumbnail is only meaningful for AUDIO.
        *
        * If the user replaces an existing audio file with
@@ -506,10 +566,7 @@ export default function NewResourcePage() {
       const uploaded =
         await uploadAdminMedia(
           file,
-          mediaType as
-            | "AUDIO"
-            | "PDF"
-            | "IMAGE",
+          mediaType,
         );
 
       console.log(
@@ -522,13 +579,17 @@ export default function NewResourcePage() {
         uploaded.data.secureUrl,
       );
 
-      /*
+      /**
        * IMPORTANT:
        *
        * thumbnailUrl comes from the backend.
        *
        * For PDFs this is the Cloudinary-generated
        * first-page JPG thumbnail.
+       *
+       * pageCount also comes from the backend and is
+       * persisted with the MediaAsset when the resource
+       * is created.
        */
       updateMedia(index, {
         type: mediaType,
@@ -541,8 +602,7 @@ export default function NewResourcePage() {
         storageKey:
           uploaded.data.publicId,
 
-        mimeType:
-          file.type,
+        mimeType: file.type,
 
         fileSize:
           String(
@@ -553,7 +613,11 @@ export default function NewResourcePage() {
         duration:
           uploaded.data.duration,
 
-        /*
+        pageCount:
+          uploaded.data.pageCount ??
+          undefined,
+
+        /**
          * Persist the generated thumbnail URL
          * in the local media state.
          *
@@ -564,7 +628,7 @@ export default function NewResourcePage() {
           uploaded.data.thumbnailUrl ??
           undefined,
 
-        /*
+        /**
          * The permanent Cloudinary URL is now
          * available, so the temporary browser
          * preview is no longer needed.
@@ -576,7 +640,7 @@ export default function NewResourcePage() {
         localPreviewUrl,
       );
     } catch (err) {
-      /*
+      /**
        * Keep the local preview available so the
        * administrator can retry the upload.
        */
@@ -586,8 +650,9 @@ export default function NewResourcePage() {
         url: "",
         storageKey: undefined,
         duration: undefined,
+        pageCount: undefined,
 
-        /*
+        /**
          * Make sure a stale generated thumbnail
          * cannot remain after a failed replacement.
          */
@@ -614,7 +679,9 @@ export default function NewResourcePage() {
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
+    if (
+      !file.type.startsWith("image/")
+    ) {
       setError(
         "Audio thumbnails must be image files.",
       );
@@ -641,7 +708,9 @@ export default function NewResourcePage() {
       thumbnail: {
         type: "IMAGE",
         provider: "CLOUDINARY",
-        title: `${title || "Resource"} thumbnail`,
+        title: `${
+          title || "Resource"
+        } thumbnail`,
         url: "",
         uploading: true,
         fileName: file.name,
@@ -662,7 +731,9 @@ export default function NewResourcePage() {
         thumbnail: {
           type: "IMAGE",
           provider: "CLOUDINARY",
-          title: `${title || "Resource"} thumbnail`,
+          title: `${
+            title || "Resource"
+          } thumbnail`,
           url:
             uploaded.data.secureUrl,
           storageKey:
@@ -686,7 +757,9 @@ export default function NewResourcePage() {
         thumbnail: {
           type: "IMAGE",
           provider: "CLOUDINARY",
-          title: `${title || "Resource"} thumbnail`,
+          title: `${
+            title || "Resource"
+          } thumbnail`,
           url: "",
           uploading: false,
           fileName: file.name,
@@ -736,7 +809,7 @@ export default function NewResourcePage() {
       const hasExternalId =
         !!item.externalId.trim();
 
-      /*
+      /**
        * Completely empty media cards are ignored.
        */
       if (
@@ -753,8 +826,7 @@ export default function NewResourcePage() {
       }
 
       if (
-        item.provider ===
-        "YOUTUBE"
+        item.provider === "YOUTUBE"
       ) {
         if (
           !hasUrl &&
@@ -765,12 +837,11 @@ export default function NewResourcePage() {
           }: Please provide a YouTube URL or video ID.`;
         }
 
-        if (
-          !getYouTubeId(
-            item.url,
-            item.externalId,
-          )
-        ) {
+        const youtubeId = hasUrl
+          ? getYouTubeId(item.url)
+          : item.externalId.trim();
+
+        if (!youtubeId) {
           return `Media ${
             i + 1
           }: Please provide a valid YouTube URL or video ID.`;
@@ -781,7 +852,7 @@ export default function NewResourcePage() {
         }: Please provide a media URL.`;
       }
 
-      /*
+      /**
        * AUDIO is the only media type that requires
        * a manually supplied thumbnail.
        */
@@ -797,6 +868,14 @@ export default function NewResourcePage() {
           }: Please upload a thumbnail for this audio.`;
         }
       }
+
+      /**
+       * PDF pageCount is generated by Cloudinary.
+       *
+       * Do not require it here because the backend may
+       * legitimately omit it for a PDF whose metadata
+       * does not expose page information.
+       */
     }
 
     return "";
@@ -844,7 +923,7 @@ export default function NewResourcePage() {
     try {
       setSaving(true);
 
-      /*
+      /**
        * Remove empty media cards.
        */
       const populatedMedia =
@@ -854,7 +933,7 @@ export default function NewResourcePage() {
             item.externalId.trim(),
         );
 
-      /*
+      /**
        * Resource-level thumbnail.
        *
        * The first AUDIO thumbnail becomes the resource's
@@ -870,7 +949,7 @@ export default function NewResourcePage() {
             item.thumbnail?.url?.trim(),
         )?.thumbnail;
 
-      /*
+      /**
        * IMPORTANT:
        *
        * thumbnailUrl is intentionally preserved here.
@@ -878,7 +957,10 @@ export default function NewResourcePage() {
        * For PDF media this contains the Cloudinary-generated
        * first-page thumbnail URL.
        *
-       * Without this property, the PDF thumbnail would work
+       * pageCount is also preserved here so the backend can
+       * store the number of PDF pages on MediaAsset.
+       *
+       * Without these properties, PDF metadata would work
        * immediately on the create page but disappear after
        * the resource is saved.
        */
@@ -914,7 +996,17 @@ export default function NewResourcePage() {
             duration:
               item.duration,
 
-            /*
+            /**
+             * Persist the number of PDF pages.
+             *
+             * Other media types will normally have
+             * this value as undefined.
+             */
+            pageCount:
+              item.pageCount ??
+              undefined,
+
+            /**
              * Preserve Cloudinary-generated PDF
              * thumbnail URLs.
              */
@@ -924,7 +1016,8 @@ export default function NewResourcePage() {
           }),
         );
 
-      const input: CreateResourceWithThumbnailInput =
+      const input:
+        CreateResourceWithThumbnailInput =
         {
           title: trimmedTitle,
 
@@ -956,7 +1049,7 @@ export default function NewResourcePage() {
           media:
             cleanedMedia,
 
-          /*
+          /**
            * Only AUDIO can populate this field.
            *
            * The backend will create this as the separate
@@ -1338,35 +1431,66 @@ export default function NewResourcePage() {
                           key={index}
                           item={item}
                           index={index}
+
+                          /**
+                           * Callback ref:
+                           * React gives us the actual input
+                           * element here.
+                           */
                           fileInput={(element) => {
                             fileInputs.current[
                               index
                             ] = element;
                           }}
+
                           thumbnailInput={(element) => {
                             thumbnailInputs.current[
                               index
                             ] = element;
                           }}
+
+                          /**
+                           * These callbacks are the only places
+                           * where we trigger .click().
+                           *
+                           * They operate on the actual stored
+                           * HTMLInputElement, not the callback ref.
+                           */
+                          onOpenFile={() => {
+                            fileInputs.current[
+                              index
+                            ]?.click();
+                          }}
+
+                          onOpenThumbnail={() => {
+                            thumbnailInputs.current[
+                              index
+                            ]?.click();
+                          }}
+
                           onFile={(file) =>
                             handleFileUpload(
                               index,
                               file,
                             )
                           }
+
                           onThumbnailFile={(file) =>
                             handleThumbnailUpload(
                               index,
                               file,
                             )
                           }
+
                           resourceTitle={title}
+
                           onUpdate={(patch) =>
                             updateMedia(
                               index,
                               patch,
                             )
                           }
+
                           onRemove={() =>
                             removeMedia(
                               index,
@@ -1435,7 +1559,8 @@ export default function NewResourcePage() {
                   media.some(
                     (item) =>
                       item.uploading ||
-                      item.thumbnail?.uploading,
+                      item.thumbnail
+                        ?.uploading,
                   )
                 }
                 className="mt-3 group flex w-full items-center justify-center gap-2 bg-charcoal px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-ivory hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-50"
@@ -1520,6 +1645,8 @@ function MediaEditor({
   onThumbnailFile,
   fileInput,
   thumbnailInput,
+  onOpenFile,
+  onOpenThumbnail,
 }: {
   item: MediaItem;
   index: number;
@@ -1540,6 +1667,11 @@ function MediaEditor({
 
   resourceTitle: string;
 
+  /**
+   * Callback refs.
+   *
+   * These are passed directly to the input elements.
+   */
   fileInput: (
     element: HTMLInputElement | null,
   ) => void;
@@ -1547,6 +1679,14 @@ function MediaEditor({
   thumbnailInput: (
     element: HTMLInputElement | null,
   ) => void;
+
+  /**
+   * Actions for opening the actual file inputs.
+   *
+   * The parent owns the actual HTMLInputElement refs.
+   */
+  onOpenFile: () => void;
+  onOpenThumbnail: () => void;
 }) {
   const icon =
     item.type === "AUDIO" ? (
@@ -1561,13 +1701,10 @@ function MediaEditor({
 
   const youtubeEmbed =
     item.provider === "YOUTUBE"
-      ? getYouTubeEmbedUrl(
-          item.url,
-          item.externalId,
-        )
+      ? getYouTubeEmbedUrl(item.url)
       : null;
 
-  /*
+  /**
    * AUDIO thumbnail:
    * manually uploaded artwork.
    *
@@ -1610,7 +1747,9 @@ function MediaEditor({
           type="button"
           onClick={onRemove}
           className="flex h-8 w-8 items-center justify-center text-charcoal/30 hover:bg-red-50 hover:text-red-500"
-          aria-label={`Remove media ${index + 1}`}
+          aria-label={`Remove media ${
+            index + 1
+          }`}
         >
           <Trash2 size={15} />
         </button>
@@ -1630,7 +1769,7 @@ function MediaEditor({
               onUpdate({
                 type: nextType,
 
-                /*
+                /**
                  * Only AUDIO can have a manually uploaded
                  * thumbnail.
                  */
@@ -1641,7 +1780,7 @@ function MediaEditor({
                     }
                   : {}),
 
-                /*
+                /**
                  * Cloudinary-generated thumbnails are
                  * associated with the uploaded PDF itself.
                  *
@@ -1652,6 +1791,8 @@ function MediaEditor({
                 ...(nextType !== "PDF"
                   ? {
                       thumbnailUrl:
+                        undefined,
+                      pageCount:
                         undefined,
                     }
                   : {}),
@@ -1693,7 +1834,7 @@ function MediaEditor({
                     ? item.externalId
                     : "",
 
-                /*
+                /**
                  * Do not destroy an already uploaded
                  * Cloudinary URL unnecessarily.
                  */
@@ -1756,12 +1897,18 @@ function MediaEditor({
               </p>
             </div>
 
+            {/**
+             * IMPORTANT:
+             *
+             * fileInput is a callback ref.
+             * React will call it with the actual
+             * HTMLInputElement.
+             */}
             <input
-              data-media-upload={index}
               ref={fileInput}
               type="file"
               className="hidden"
-              accept="audio/*,video/*,image/*,application/pdf"
+              accept="audio/*,image/*,application/pdf"
               onChange={(event) => {
                 onFile(
                   event.target.files?.[0],
@@ -1775,13 +1922,7 @@ function MediaEditor({
             <button
               type="button"
               disabled={item.uploading}
-              onClick={() =>
-                document
-                  .querySelector<HTMLInputElement>(
-                    `input[data-media-upload="${index}"]`,
-                  )
-                  ?.click()
-              }
+              onClick={onOpenFile}
               className="inline-flex items-center gap-2 bg-charcoal px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory disabled:opacity-50"
             >
               <Upload size={14} />
@@ -1825,6 +1966,17 @@ function MediaEditor({
             item.url && (
               <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.1em] text-green-700">
                 Media uploaded successfully
+              </p>
+            )}
+
+          {item.type === "PDF" &&
+            !item.uploading &&
+            item.pageCount && (
+              <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.1em] text-charcoal/35">
+                {item.pageCount}{" "}
+                {item.pageCount === 1
+                  ? "page"
+                  : "pages"}
               </p>
             )}
         </div>
@@ -1882,10 +2034,12 @@ function MediaEditor({
               </p>
             </div>
 
+            {/**
+             * Again, this is a callback ref.
+             * The actual click is performed through
+             * onOpenThumbnail.
+             */}
             <input
-              data-thumbnail-upload={
-                index
-              }
               ref={thumbnailInput}
               type="file"
               className="hidden"
@@ -1906,12 +2060,8 @@ function MediaEditor({
                 item.thumbnail
                   ?.uploading
               }
-              onClick={() =>
-                document
-                  .querySelector<HTMLInputElement>(
-                    `input[data-thumbnail-upload="${index}"]`,
-                  )
-                  ?.click()
+              onClick={
+                onOpenThumbnail
               }
               className="inline-flex items-center gap-2 border border-charcoal/10 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] hover:border-bronze hover:text-bronze disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -2057,12 +2207,12 @@ function MediaEditor({
               item.localPreviewUrl
             }
 
-            /*
+            /**
              * AUDIO:
              * manually uploaded artwork.
              *
              * PDF:
-             * ResourceMediaPreview now reads
+             * ResourceMediaPreview reads
              * media.thumbnailUrl directly.
              */
             thumbnailUrl={
@@ -2209,7 +2359,7 @@ function PreviewMedia({
   media: MediaItem;
   resourceTitle: string;
 }) {
-  /*
+  /**
    * AUDIO uses its manually uploaded artwork.
    *
    * PDF uses media.thumbnailUrl directly inside

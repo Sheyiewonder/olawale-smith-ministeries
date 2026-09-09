@@ -8,106 +8,616 @@ import {
   Minus,
   Plus,
   RotateCcw,
+  RefreshCw,
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
-import {
-  getDocument,
-  GlobalWorkerOptions,
-} from "pdfjs-dist";
-
-import type {
-  PDFDocumentProxy,
-  PDFPageProxy,
-  RenderTask,
-} from "pdfjs-dist";
-
-GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+/* -------------------------------------------------------------------------- */
+/* Props                                                                      */
+/* -------------------------------------------------------------------------- */
 
 interface PdfPreviewProps {
   src: string;
   title?: string;
   thumbnailUrl?: string | null;
+  pageCount?: number | null;
 }
 
-/*
- * Only pages inside this window are mounted/rendered.
- *
- * On mobile this normally means:
- *   current page
- *   previous page
- *   next page
- *
- * This is deliberately conservative for iPhone/Safari.
- */
-const RENDER_BUFFER = 1;
+/* -------------------------------------------------------------------------- */
+/* Constants                                                                  */
+/* -------------------------------------------------------------------------- */
 
-/*
- * Keep rendering resolution conservative.
- */
-const MAX_DPR_DESKTOP = 1.25;
-const MAX_DPR_MOBILE = 1;
+const MIN_ZOOM = 0.6;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 0.1;
 
-/*
- * Maximum canvas memory budget per individual page.
- */
-const MAX_PIXELS_DESKTOP = 18_000_000;
-const MAX_PIXELS_MOBILE = 8_000_000;
-
-/*
- * Approximate A4 portrait ratio.
- *
- * This is only used for placeholders before a real page
- * has been loaded.
- */
+const DEFAULT_PAGE_COUNT = 1;
 const DEFAULT_PAGE_RATIO = 210 / 297;
+const PAGE_GAP = 20;
 
-interface PageDimensions {
-  width: number;
-  height: number;
+/**
+ * Number of pages around the visible viewport that are allowed
+ * to mount their actual <img> element.
+ *
+ * This is deliberately small so a 100+ page PDF does not trigger
+ * hundreds of Cloudinary requests at once.
+ */
+const PAGE_RENDER_MARGIN = 2;
+
+/* -------------------------------------------------------------------------- */
+/* Types                                                                      */
+/* -------------------------------------------------------------------------- */
+
+interface PageState {
+  loaded: boolean;
+  error: boolean;
 }
 
-function sanitizeFilenameTitle(
-  title: string,
-): string {
+/* -------------------------------------------------------------------------- */
+/* Filename helpers                                                           */
+/* -------------------------------------------------------------------------- */
+
+function sanitizeFilenameTitle(title: string): string {
   return title
     .trim()
-    .replace(
-      /[<>:"/\\|?*\u0000-\u001F]/g,
-      "",
-    )
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "")
     .replace(/\s+/g, " ")
     .replace(/\.+$/, "")
     .slice(0, 180);
 }
 
-function getDownloadFilename(
-  title?: string,
-): string {
-  const sanitizedTitle =
-    sanitizeFilenameTitle(
-      title?.trim() || "",
-    );
+function getDownloadFilename(title?: string): string {
+  const sanitized = sanitizeFilenameTitle(title ?? "");
 
-  if (sanitizedTitle) {
-    return `${sanitizedTitle}.pdf`;
-  }
-
-  return "document.pdf";
+  return sanitized
+    ? `${sanitized}.pdf`
+    : "document.pdf";
 }
 
-export default function PdfPreview({
+/* -------------------------------------------------------------------------- */
+/* PDF helpers                                                                */
+/* -------------------------------------------------------------------------- */
+
+function isCloudinaryPdf(src: string): boolean {
+  const value = src.trim();
+
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+
+    const pathname = url.pathname.toLowerCase();
+
+    return (
+      url.hostname.includes("cloudinary.com") &&
+      pathname.includes("/image/upload/") &&
+      pathname.endsWith(".pdf")
+    );
+  } catch {
+    return (
+      value.includes("/image/upload/") &&
+      /\.pdf(?:$|[?#])/i.test(value)
+    );
+  }
+}
+
+/**
+ * Converts:
+ *
+ * /image/upload/v123/file.pdf
+ *
+ * into:
+ *
+ * /image/upload/pg_1,f_jpg,q_auto/v123/file.jpg
+ *
+ * The transformation is inserted directly before the
+ * Cloudinary version/public-id portion.
+ */
+function getCloudinaryPageUrl(
+  src: string,
+  pageNumber: number,
+): string {
+  const value = src.trim();
+
+  if (!value || pageNumber < 1) {
+    return "";
+  }
+
+  const marker = "/image/upload/";
+  const markerIndex = value.indexOf(marker);
+
+  if (markerIndex === -1) {
+    return "";
+  }
+
+  const prefixEnd = markerIndex + marker.length;
+
+  const prefix = value.slice(0, prefixEnd);
+  const remainder = value.slice(prefixEnd);
+
+  /*
+   * Keep query strings and fragments outside
+   * the Cloudinary transformation path.
+   */
+  const queryIndex = remainder.search(/[?#]/);
+
+  const pathname =
+    queryIndex === -1
+      ? remainder
+      : remainder.slice(0, queryIndex);
+
+  const suffix =
+    queryIndex === -1
+      ? ""
+      : remainder.slice(queryIndex);
+
+  const pathParts = pathname
+    .split("/")
+    .filter(Boolean);
+
+  if (pathParts.length === 0) {
+    return "";
+  }
+
+  /*
+   * Find the Cloudinary version.
+   *
+   * Example:
+   * v1788487514
+   */
+  const versionIndex = pathParts.findIndex(
+    (part) => /^v\d+$/.test(part),
+  );
+
+  /*
+   * Cloudinary PDF page delivery:
+   *
+   * pg_1,f_jpg,q_auto
+   *
+   * selects page 1 and converts it to JPEG.
+   */
+  const transformation =
+    `pg_${pageNumber},f_jpg,q_auto`;
+
+  /*
+   * The source PDF ends with:
+   *
+   * file.pdf
+   *
+   * The delivered page should be:
+   *
+   * file.jpg
+   */
+  const lastPartIndex =
+    pathParts.length - 1;
+
+  const lastPart =
+    pathParts[lastPartIndex];
+
+  const imageFilename =
+    /\.pdf$/i.test(lastPart)
+      ? lastPart.replace(
+          /\.pdf$/i,
+          ".jpg",
+        )
+      : `${lastPart}.jpg`;
+
+  pathParts[lastPartIndex] =
+    imageFilename;
+
+  /*
+   * Normal Cloudinary URL:
+   *
+   * /image/upload/v123/file.pdf
+   *
+   * becomes:
+   *
+   * /image/upload/pg_1,f_jpg,q_auto/v123/file.jpg
+   */
+  if (versionIndex >= 0) {
+    const existingTransformations =
+      pathParts.slice(
+        0,
+        versionIndex,
+      );
+
+    const versionAndPublicId =
+      pathParts.slice(versionIndex);
+
+    return [
+      prefix.replace(/\/$/, ""),
+      ...existingTransformations,
+      transformation,
+      ...versionAndPublicId,
+    ].join("/") + suffix;
+  }
+
+  /*
+   * Fallback for Cloudinary URLs
+   * without an explicit version.
+   */
+  return [
+    prefix.replace(/\/$/, ""),
+    transformation,
+    ...pathParts,
+  ].join("/") + suffix;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Thumbnail helper                                                           */
+/* -------------------------------------------------------------------------- */
+
+function getFallbackThumbnailUrl(
+  thumbnailUrl?: string | null,
+): string {
+  return thumbnailUrl?.trim() ?? "";
+}
+
+/* -------------------------------------------------------------------------- */
+/* Page image                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Individual page renderer.
+ *
+ * This component handles:
+ *
+ * 1. Lazy mounting through IntersectionObserver.
+ * 2. Cached image detection.
+ * 3. Normal image onLoad/onError handling.
+ *
+ * Keeping this separate prevents the parent PDF component from
+ * having to manage browser observers for every page itself.
+ */
+interface PdfPageProps {
+  pageNumber: number;
+  pageUrl: string;
+  title?: string;
+  zoom: number;
+  loaded: boolean;
+  hasError: boolean;
+  fallbackThumbnailUrl: string;
+  normalizedPageCount: number;
+  onLoad: (pageNumber: number) => void;
+  onError: (pageNumber: number) => void;
+  onRetry: (pageNumber: number) => void;
+  registerPageRef: (
+    pageNumber: number,
+    element: HTMLDivElement | null,
+  ) => void;
+}
+
+function PdfPage({
+  pageNumber,
+  pageUrl,
+  title,
+  zoom,
+  loaded,
+  hasError,
+  fallbackThumbnailUrl,
+  normalizedPageCount,
+  onLoad,
+  onError,
+  onRetry,
+  registerPageRef,
+}: PdfPageProps) {
+  const pageContainerRef =
+    useRef<HTMLDivElement | null>(null);
+
+  const imageRef =
+    useRef<HTMLImageElement | null>(null);
+
+  const [shouldRenderImage, setShouldRenderImage] =
+    useState(pageNumber <= 2);
+
+  /*
+   * Register the page element with the parent's
+   * current-page tracking system.
+   */
+  useEffect(() => {
+    registerPageRef(
+      pageNumber,
+      pageContainerRef.current,
+    );
+
+    return () => {
+      registerPageRef(
+        pageNumber,
+        null,
+      );
+    };
+  }, [
+    pageNumber,
+    registerPageRef,
+  ]);
+
+  /*
+   * Only mount images when they are close to the viewport.
+   *
+   * Page 1 and page 2 are mounted immediately because they
+   * are the first visible pages.
+   */
+  useEffect(() => {
+    if (
+      pageNumber <= 2 ||
+      shouldRenderImage
+    ) {
+      return;
+    }
+
+    const element =
+      pageContainerRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    if (
+      typeof IntersectionObserver ===
+      "undefined"
+    ) {
+      setShouldRenderImage(true);
+      return;
+    }
+
+    const observer =
+      new IntersectionObserver(
+        (entries) => {
+          const entry =
+            entries[0];
+
+          if (
+            entry?.isIntersecting
+          ) {
+            setShouldRenderImage(true);
+            observer.disconnect();
+          }
+        },
+        {
+          root: null,
+          rootMargin: `${PAGE_RENDER_MARGIN * 100}% 0px`,
+          threshold: 0,
+        },
+      );
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [
+    pageNumber,
+    shouldRenderImage,
+  ]);
+
+  /*
+   * If the page URL cannot be generated, mark it as an error
+   * instead of leaving the page stuck on "Loading page X".
+   */
+  useEffect(() => {
+    if (
+      !pageUrl &&
+      !hasError
+    ) {
+      onError(pageNumber);
+    }
+  }, [
+    pageUrl,
+    hasError,
+    pageNumber,
+    onError,
+  ]);
+
+  /*
+   * Browser/cache safeguard.
+   *
+   * If the image was already cached before React's normal
+   * onLoad callback fired, naturalWidth will still tell us
+   * that the image successfully exists.
+   */
+  useEffect(() => {
+    const image =
+      imageRef.current;
+
+    if (
+      !image ||
+      !shouldRenderImage ||
+      !pageUrl
+    ) {
+      return;
+    }
+
+    if (
+      image.complete &&
+      image.naturalWidth > 0
+    ) {
+      onLoad(pageNumber);
+    }
+  }, [
+    pageNumber,
+    pageUrl,
+    shouldRenderImage,
+    onLoad,
+  ]);
+
+  const pageError =
+    hasError ||
+    !pageUrl;
+
+  return (
+    <div
+      ref={pageContainerRef}
+      className="relative w-full"
+      style={{
+        marginBottom:
+          pageNumber <
+          normalizedPageCount
+            ? PAGE_GAP
+            : 0,
+      }}
+    >
+      {/* ------------------------------------------------------------------ */}
+      {/* Stable page surface                                                 */}
+      {/* ------------------------------------------------------------------ */}
+
+      <div
+        className="relative w-full overflow-hidden rounded-sm border border-black/5 bg-white shadow-sm"
+        style={{
+          aspectRatio:
+            DEFAULT_PAGE_RATIO,
+        }}
+      >
+        {/* -------------------------------------------------------------- */}
+        {/* Loading state                                                    */}
+        {/* -------------------------------------------------------------- */}
+
+        {!loaded &&
+          !pageError && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+                  <Loader2
+                    size={20}
+                    className="animate-spin text-bronze"
+                  />
+                </div>
+
+                <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                  Loading page{" "}
+                  {pageNumber}
+                </span>
+              </div>
+            </div>
+          )}
+
+        {/* -------------------------------------------------------------- */}
+        {/* Error state                                                      */}
+        {/* -------------------------------------------------------------- */}
+
+        {pageError && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white p-8 text-center">
+            <div className="w-full max-w-sm">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+                <FileText
+                  size={20}
+                />
+              </div>
+
+              <p className="mt-3 text-xs font-semibold">
+                Unable to load page{" "}
+                {pageNumber}
+              </p>
+
+              <p className="mt-1 text-[10px] leading-5 text-muted-foreground">
+                {!pageUrl
+                  ? "A valid preview URL could not be generated for this page."
+                  : "The page image could not be loaded."}
+              </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onRetry(pageNumber)
+                }
+                className="mt-4 inline-flex items-center gap-2 rounded-full bg-bronze px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-ivory"
+              >
+                <RefreshCw
+                  size={13}
+                />
+                Retry
+              </button>
+
+              {pageNumber === 1 &&
+                fallbackThumbnailUrl && (
+                  <div className="mt-5 overflow-hidden rounded-xl border border-black/5">
+                    <img
+                      src={
+                        fallbackThumbnailUrl
+                      }
+                      alt={
+                        title
+                          ? `${title} PDF preview`
+                          : "PDF preview"
+                      }
+                      className="block h-auto w-full"
+                      draggable={false}
+                    />
+                  </div>
+                )}
+            </div>
+          </div>
+        )}
+
+        {/* -------------------------------------------------------------- */}
+        {/* Page image                                                       */}
+        {/* -------------------------------------------------------------- */}
+
+        {shouldRenderImage &&
+          pageUrl && (
+            <img
+              ref={imageRef}
+              src={pageUrl}
+              alt={`${title || "PDF"} page ${pageNumber}`}
+              loading={
+                pageNumber <= 2
+                  ? "eager"
+                  : "lazy"
+              }
+              decoding="async"
+              fetchPriority={
+                pageNumber === 1
+                  ? "high"
+                  : pageNumber === 2
+                    ? "auto"
+                    : "low"
+              }
+              draggable={false}
+              onLoad={() =>
+                onLoad(pageNumber)
+              }
+              onError={() =>
+                onError(pageNumber)
+              }
+              className={[
+                "absolute inset-0 block h-full w-full",
+                "select-none object-contain",
+                "bg-white",
+                "transition-opacity duration-200",
+                loaded
+                  ? "opacity-100"
+                  : "opacity-0",
+              ].join(" ")}
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin:
+                  "center top",
+                transition:
+                  "opacity 200ms ease, transform 180ms ease",
+              }}
+            />
+          )}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
+
+function PdfPreview({
   src,
   title,
   thumbnailUrl,
+  pageCount,
 }: PdfPreviewProps) {
   const [downloading, setDownloading] =
     useState(false);
@@ -115,1378 +625,346 @@ export default function PdfPreview({
   const [downloadError, setDownloadError] =
     useState(false);
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [previewError, setPreviewError] =
-    useState<string | null>(null);
-
-  const [pageCount, setPageCount] =
-    useState(0);
+  const [zoom, setZoom] = useState(1);
 
   const [currentPage, setCurrentPage] =
     useState(1);
 
-  const [zoom, setZoom] =
-    useState(1);
+  const [previewError, setPreviewError] =
+    useState<string | null>(null);
 
-  const [documentReady, setDocumentReady] =
-    useState(false);
+  const [pageStates, setPageStates] =
+    useState<Record<number, PageState>>({});
 
-  const [containerWidth, setContainerWidth] =
-    useState(0);
-
-  /*
-   * Only pages inside this set are mounted.
-   */
-  const [activePages, setActivePages] =
-    useState<Set<number>>(
-      () => new Set(),
-    );
-
-  /*
-   * Dimensions are learned lazily.
-   *
-   * We never call getPage() for every page up front.
-   */
-  const [pageDimensions, setPageDimensions] =
-    useState<
-      Record<number, PageDimensions>
-    >({});
-
-  /*
-   * Page wrapper references.
-   *
-   * These remain lightweight divs and contain no
-   * canvas unless the page is active.
-   */
-  const pageHostRefs =
-    useRef<
-      Record<number, HTMLDivElement | null>
-    >({});
-
-  /*
-   * Canvas references only exist for active pages.
-   */
-  const canvasRefs =
-    useRef<
-      Record<number, HTMLCanvasElement | null>
-    >({});
-
-  const canvasContainerRef =
+  const containerRef =
     useRef<HTMLDivElement | null>(null);
 
-  /*
-   * Current PDF document.
-   */
-  const pdfDocumentRef =
-    useRef<PDFDocumentProxy | null>(null);
-
-  /*
-   * Current PDF loading task.
-   */
-  const loadingTaskRef =
-    useRef<{
-      destroy?: () => Promise<void> | void;
-    } | null>(null);
-
-  /*
-   * Active PDF.js render tasks.
-   */
-  const renderTasksRef =
+  const pageRefs =
     useRef<
-      Record<number, RenderTask | null>
+      Record<
+        number,
+        HTMLDivElement | null
+      >
     >({});
 
-  /*
-   * Pages currently rendering.
-   */
-  const renderingPagesRef =
-    useRef<Set<number>>(new Set());
+  /* ------------------------------------------------------------------------ */
+  /* Normalized page count                                                    */
+  /* ------------------------------------------------------------------------ */
 
-  /*
-   * Pages that successfully rendered.
-   */
-  const renderedPagesRef =
-    useRef<Set<number>>(new Set());
+  const normalizedPageCount =
+    useMemo(() => {
+      const numericPageCount =
+        typeof pageCount === "number"
+          ? pageCount
+          : Number(pageCount);
 
-  /*
-   * Prevents stale asynchronous work from affecting
-   * a newer document/render generation.
-   */
-  const generationRef =
-    useRef(0);
+      if (
+        !Number.isFinite(
+          numericPageCount,
+        ) ||
+        numericPageCount <= 0
+      ) {
+        return DEFAULT_PAGE_COUNT;
+      }
 
-  const zoomRef =
-    useRef(zoom);
+      return Math.max(
+        1,
+        Math.floor(
+          numericPageCount,
+        ),
+      );
+    }, [pageCount]);
 
-  const containerWidthRef =
-    useRef(containerWidth);
-
-  const activePagesRef =
-    useRef<Set<number>>(
-      new Set(),
+  const fallbackThumbnailUrl =
+    useMemo(
+      () =>
+        getFallbackThumbnailUrl(
+          thumbnailUrl,
+        ),
+      [thumbnailUrl],
     );
 
-  void thumbnailUrl;
+  /* ------------------------------------------------------------------------ */
+  /* Pre-generate page URLs                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  const pageUrls = useMemo(() => {
+    const urls: Record<
+      number,
+      string
+    > = {};
+
+    for (
+      let pageNumber = 1;
+      pageNumber <=
+      normalizedPageCount;
+      pageNumber += 1
+    ) {
+      urls[pageNumber] =
+        getCloudinaryPageUrl(
+          src,
+          pageNumber,
+        );
+    }
+
+    return urls;
+  }, [
+    src,
+    normalizedPageCount,
+  ]);
+
+  useEffect(() => {
+    console.log(
+      "PDF SOURCE:",
+      src,
+    );
+
+    console.log(
+      "PDF PAGE COUNT:",
+      normalizedPageCount,
+    );
+
+    console.log(
+      "PDF PAGE 1 URL:",
+      pageUrls[1],
+    );
+
+    console.log(
+      "PDF PAGE 2 URL:",
+      pageUrls[2],
+    );
+  }, [
+    src,
+    normalizedPageCount,
+    pageUrls,
+  ]);
 
   /* ------------------------------------------------------------------------ */
-  /* Synchronize refs                                                         */
+  /* Reset when document changes                                              */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
+    setDownloading(false);
+    setDownloadError(false);
+    setPreviewError(null);
+    setZoom(1);
+    setCurrentPage(1);
+    setPageStates({});
 
-  useEffect(() => {
-    containerWidthRef.current =
-      containerWidth;
-  }, [containerWidth]);
-
-  useEffect(() => {
-    activePagesRef.current =
-      activePages;
-  }, [activePages]);
+    pageRefs.current = {};
+  }, [
+    src,
+    normalizedPageCount,
+  ]);
 
   /* ------------------------------------------------------------------------ */
-  /* Cancel one page render                                                   */
+  /* Validate source                                                          */
   /* ------------------------------------------------------------------------ */
 
-  const cancelPageRender =
+  useEffect(() => {
+    const value = src.trim();
+
+    if (!value) {
+      setPreviewError(
+        "PDF source is unavailable.",
+      );
+
+      return;
+    }
+
+    if (!isCloudinaryPdf(value)) {
+      if (fallbackThumbnailUrl) {
+        setPreviewError(null);
+        return;
+      }
+
+      setPreviewError(
+        "This PDF cannot be rendered as a page preview.",
+      );
+
+      return;
+    }
+
+    setPreviewError(null);
+  }, [
+    src,
+    fallbackThumbnailUrl,
+  ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Page ref registration                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  const registerPageRef =
+    useCallback(
+      (
+        pageNumber: number,
+        element: HTMLDivElement | null,
+      ) => {
+        pageRefs.current[
+          pageNumber
+        ] = element;
+      },
+      [],
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /* Page state helpers                                                       */
+  /* ------------------------------------------------------------------------ */
+
+  const handlePageLoad =
     useCallback(
       (pageNumber: number) => {
-        const task =
-          renderTasksRef.current[
-            pageNumber
-          ];
+        setPageStates(
+          (previous) => ({
+            ...previous,
+            [pageNumber]: {
+              loaded: true,
+              error: false,
+            },
+          }),
+        );
+      },
+      [],
+    );
 
-        if (task) {
-          try {
-            task.cancel();
-          } catch {
-            // Ignore cancellation failures.
-          }
-        }
+  const handlePageError =
+    useCallback(
+      (pageNumber: number) => {
+        const pageUrl =
+          pageUrls[pageNumber];
 
-        renderTasksRef.current[
-          pageNumber
-        ] = null;
+        console.error(
+          `Failed to load PDF page ${pageNumber}.`,
+          {
+            pageNumber,
+            pageUrl,
+          },
+        );
 
-        renderingPagesRef.current.delete(
-          pageNumber,
+        setPageStates(
+          (previous) => ({
+            ...previous,
+            [pageNumber]: {
+              loaded: false,
+              error: true,
+            },
+          }),
+        );
+      },
+      [pageUrls],
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /* Retry individual page                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  const retryPage =
+    useCallback(
+      (pageNumber: number) => {
+        setPageStates(
+          (previous) => ({
+            ...previous,
+            [pageNumber]: {
+              loaded: false,
+              error: false,
+            },
+          }),
         );
       },
       [],
     );
 
   /* ------------------------------------------------------------------------ */
-  /* Release one canvas                                                      */
-  /* ------------------------------------------------------------------------ */
-
-  const releaseCanvas =
-    useCallback(
-      (pageNumber: number) => {
-        cancelPageRender(pageNumber);
-
-        const canvas =
-          canvasRefs.current[
-            pageNumber
-          ];
-
-        if (canvas) {
-          try {
-            const context =
-              canvas.getContext("2d");
-
-            if (context) {
-              context.clearRect(
-                0,
-                0,
-                canvas.width,
-                canvas.height,
-              );
-            }
-          } catch {
-            // Ignore canvas cleanup failures.
-          }
-
-          /*
-           * Reducing the backing store to 1x1 releases
-           * the large bitmap allocation.
-           */
-          canvas.width = 1;
-          canvas.height = 1;
-
-          canvas.style.width = "0px";
-          canvas.style.height = "0px";
-        }
-
-        delete canvasRefs.current[
-          pageNumber
-        ];
-
-        renderedPagesRef.current.delete(
-          pageNumber,
-        );
-      },
-      [cancelPageRender],
-    );
-
-  /* ------------------------------------------------------------------------ */
-  /* Release pages outside active window                                     */
-  /* ------------------------------------------------------------------------ */
-
-  const releaseInactivePages =
-    useCallback(
-      (nextActivePages: Set<number>) => {
-        const currentlyRendered =
-          Array.from(
-            renderedPagesRef.current,
-          );
-
-        for (const pageNumber of currentlyRendered) {
-          if (
-            !nextActivePages.has(
-              pageNumber,
-            )
-          ) {
-            releaseCanvas(
-              pageNumber,
-            );
-          }
-        }
-
-        const currentlyRendering =
-          Array.from(
-            renderingPagesRef.current,
-          );
-
-        for (const pageNumber of currentlyRendering) {
-          if (
-            !nextActivePages.has(
-              pageNumber,
-            )
-          ) {
-            cancelPageRender(
-              pageNumber,
-            );
-          }
-        }
-      },
-      [
-        cancelPageRender,
-        releaseCanvas,
-      ],
-    );
-
-  /* ------------------------------------------------------------------------ */
-  /* Measure container                                                        */
+  /* Current page tracking                                                    */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
-    const element =
-      canvasContainerRef.current;
-
-    if (!element) {
-      return;
-    }
-
-    const updateWidth = () => {
-      const width =
-        element.clientWidth;
-
-      if (width > 0) {
-        setContainerWidth(width);
-      }
-    };
-
-    updateWidth();
+    const container =
+      containerRef.current;
 
     if (
-      typeof ResizeObserver !==
-      "undefined"
+      !container ||
+      !src ||
+      previewError
     ) {
-      const observer =
-        new ResizeObserver(
-          updateWidth,
-        );
-
-      observer.observe(element);
-
-      return () => {
-        observer.disconnect();
-      };
-    }
-
-    window.addEventListener(
-      "resize",
-      updateWidth,
-    );
-
-    return () => {
-      window.removeEventListener(
-        "resize",
-        updateWidth,
-      );
-    };
-  }, [documentReady]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Load PDF                                                                 */
-  /* ------------------------------------------------------------------------ */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadPdf() {
-      if (!src) {
-        setLoading(false);
-        setDocumentReady(false);
-        setPageCount(0);
-        setPageDimensions({});
-        setActivePages(
-          new Set(),
-        );
-
-        return;
-      }
-
-      /*
-       * Invalidate every previous async operation.
-       */
-      generationRef.current += 1;
-
-      setLoading(true);
-      setPreviewError(null);
-      setDocumentReady(false);
-      setPageCount(0);
-      setCurrentPage(1);
-      setContainerWidth(0);
-      setPageDimensions({});
-      setActivePages(
-        new Set(),
-      );
-
-      /*
-       * Cancel/release previous rendering.
-       */
-      const previousPages =
-        Array.from(
-          renderingPagesRef.current,
-        );
-
-      previousPages.forEach(
-        cancelPageRender,
-      );
-
-      renderedPagesRef.current.clear();
-      renderingPagesRef.current.clear();
-
-      renderTasksRef.current = {};
-      canvasRefs.current = {};
-      pageHostRefs.current = {};
-
-      /*
-       * Destroy previous loading task if possible.
-       */
-      const previousLoadingTask =
-        loadingTaskRef.current;
-
-      loadingTaskRef.current = null;
-
-      if (
-        previousLoadingTask &&
-        typeof previousLoadingTask.destroy ===
-          "function"
-      ) {
-        try {
-          await previousLoadingTask.destroy();
-        } catch {
-          // Ignore cleanup failures.
-        }
-      }
-
-      /*
-       * Cleanup previous PDF document.
-       */
-      const previousPdf =
-        pdfDocumentRef.current;
-
-      pdfDocumentRef.current = null;
-
-      if (previousPdf) {
-        try {
-          await previousPdf.cleanup();
-        } catch {
-          // Ignore cleanup failures.
-        }
-      }
-
-      try {
-        const loadingTask =
-          getDocument({
-            url: src,
-            withCredentials: false,
-          });
-
-        loadingTaskRef.current =
-          loadingTask;
-
-        const pdf =
-          await loadingTask.promise;
-
-        if (
-          cancelled ||
-          generationRef.current <= 0
-        ) {
-          try {
-            await pdf.cleanup();
-          } catch {
-            // Ignore cleanup failures.
-          }
-
-          return;
-        }
-
-        pdfDocumentRef.current =
-          pdf;
-
-        setPageCount(
-          pdf.numPages,
-        );
-
-        setCurrentPage(1);
-        setDocumentReady(true);
-        setLoading(false);
-      } catch (error) {
-        console.error(
-          "PDF preview failed:",
-          error,
-        );
-
-        if (cancelled) {
-          return;
-        }
-
-        setLoading(false);
-        setDocumentReady(false);
-        setPageCount(0);
-        setPageDimensions({});
-        setActivePages(
-          new Set(),
-        );
-
-        setPreviewError(
-          "The PDF could not be loaded for preview.",
-        );
-      }
-    }
-
-    void loadPdf();
-
-    return () => {
-      cancelled = true;
-
-      generationRef.current += 1;
-
-      /*
-       * Cancel all active render tasks.
-       */
-      const renderingPages =
-        Array.from(
-          renderingPagesRef.current,
-        );
-
-      renderingPages.forEach(
-        cancelPageRender,
-      );
-
-      /*
-       * Release every active canvas.
-       */
-      const renderedPages =
-        Array.from(
-          renderedPagesRef.current,
-        );
-
-      renderedPages.forEach(
-        releaseCanvas,
-      );
-
-      renderedPagesRef.current.clear();
-      renderingPagesRef.current.clear();
-
-      renderTasksRef.current = {};
-      canvasRefs.current = {};
-      pageHostRefs.current = {};
-
-      /*
-       * Cancel loading.
-       */
-      const loadingTask =
-        loadingTaskRef.current;
-
-      loadingTaskRef.current = null;
-
-      if (
-        loadingTask &&
-        typeof loadingTask.destroy ===
-          "function"
-      ) {
-        try {
-          void loadingTask.destroy();
-        } catch {
-          // Ignore cleanup failures.
-        }
-      }
-
-      /*
-       * Cleanup PDF.
-       */
-      const pdf =
-        pdfDocumentRef.current;
-
-      pdfDocumentRef.current = null;
-
-      if (pdf) {
-        void pdf
-          .cleanup()
-          .catch(() => {
-            // Ignore cleanup failures.
-          });
-      }
-    };
-  }, [
-    src,
-    cancelPageRender,
-    releaseCanvas,
-  ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Available page width                                                     */
-  /* ------------------------------------------------------------------------ */
-
-  const getAvailableWidth =
-    useCallback(() => {
-      const width =
-        containerWidthRef.current;
-
-      if (width <= 0) {
-        return 0;
-      }
-
-      const isDesktop =
-        window.matchMedia(
-          "(min-width: 640px)",
-        ).matches;
-
-      const horizontalPadding =
-        isDesktop
-          ? 48
-          : 24;
-
-      return Math.max(
-        width -
-          horizontalPadding,
-        240,
-      );
-    }, []);
-
-  /* ------------------------------------------------------------------------ */
-  /* Placeholder height                                                      */
-  /* ------------------------------------------------------------------------ */
-
-  const getPageHeight =
-    useCallback(
-      (pageNumber: number) => {
-        const width =
-          getAvailableWidth();
-
-        if (width <= 0) {
-          return 420;
-        }
-
-        const dimensions =
-          pageDimensions[
-            pageNumber
-          ];
-
-        const ratio =
-          dimensions &&
-          dimensions.width > 0 &&
-          dimensions.height > 0
-            ? dimensions.height /
-              dimensions.width
-            : 1 /
-              DEFAULT_PAGE_RATIO;
-
-        return Math.max(
-          320,
-          width *
-            ratio *
-            zoom,
-        );
-      },
-      [
-        getAvailableWidth,
-        pageDimensions,
-        zoom,
-      ],
-    );
-
-  /* ------------------------------------------------------------------------ */
-  /* Determine visible page range                                             */
-  /* ------------------------------------------------------------------------ */
-
-  const getVisiblePageRange =
-    useCallback(() => {
-      const container =
-        canvasContainerRef.current;
-
-      if (
-        !container ||
-        pageCount <= 0
-      ) {
-        return {
-          first: 1,
-          last: Math.min(
-            pageCount || 1,
-            1 + RENDER_BUFFER,
-          ),
-        };
-      }
-
-      const scrollTop =
-        container.scrollTop;
-
-      const viewportBottom =
-        scrollTop +
-        container.clientHeight;
-
-      let firstVisible = 1;
-      let lastVisible = 1;
-
-      let foundFirst = false;
-
-      for (
-        let pageNumber = 1;
-        pageNumber <= pageCount;
-        pageNumber += 1
-      ) {
-        const element =
-          pageHostRefs.current[
-            pageNumber
-          ];
-
-        if (!element) {
-          continue;
-        }
-
-        const top =
-          element.offsetTop;
-
-        const bottom =
-          top +
-          element.offsetHeight;
-
-        if (
-          !foundFirst &&
-          bottom >= scrollTop
-        ) {
-          firstVisible =
-            pageNumber;
-
-          foundFirst = true;
-        }
-
-        if (
-          top <= viewportBottom
-        ) {
-          lastVisible =
-            pageNumber;
-        } else if (foundFirst) {
-          break;
-        }
-      }
-
-      return {
-        first: Math.max(
-          1,
-          firstVisible -
-            RENDER_BUFFER,
-        ),
-        last: Math.min(
-          pageCount,
-          lastVisible +
-            RENDER_BUFFER,
-        ),
-      };
-    }, [pageCount]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Update active pages                                                      */
-  /* ------------------------------------------------------------------------ */
-
-  const updateActivePages =
-    useCallback(() => {
-      if (
-        !documentReady ||
-        pageCount <= 0
-      ) {
-        return;
-      }
-
-      const {
-        first,
-        last,
-      } = getVisiblePageRange();
-
-      const nextPages =
-        new Set<number>();
-
-      for (
-        let pageNumber = first;
-        pageNumber <= last;
-        pageNumber += 1
-      ) {
-        nextPages.add(
-          pageNumber,
-        );
-      }
-
-      activePagesRef.current =
-        nextPages;
-
-      setActivePages(
-        nextPages,
-      );
-
-      releaseInactivePages(
-        nextPages,
-      );
-    }, [
-      documentReady,
-      pageCount,
-      getVisiblePageRange,
-      releaseInactivePages,
-    ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Render one page                                                          */
-  /* ------------------------------------------------------------------------ */
-
-  const renderPage =
-    useCallback(
-      async (
-        pageNumber: number,
-        generation: number,
-      ) => {
-        if (
-          generation !==
-          generationRef.current
-        ) {
-          return;
-        }
-
-        if (
-          !activePagesRef.current.has(
-            pageNumber,
-          )
-        ) {
-          return;
-        }
-
-        const pdf =
-          pdfDocumentRef.current;
-
-        if (!pdf) {
-          return;
-        }
-
-        const canvas =
-          canvasRefs.current[
-            pageNumber
-          ];
-
-        if (!canvas) {
-          return;
-        }
-
-        if (
-          renderingPagesRef.current.has(
-            pageNumber,
-          )
-        ) {
-          return;
-        }
-
-        renderingPagesRef.current.add(
-          pageNumber,
-        );
-
-        let page:
-          | PDFPageProxy
-          | null = null;
-
-        try {
-          page =
-            await pdf.getPage(
-              pageNumber,
-            );
-
-          if (
-            generation !==
-            generationRef.current ||
-            !activePagesRef.current.has(
-              pageNumber,
-            )
-          ) {
-            return;
-          }
-
-          const baseViewport =
-            page.getViewport({
-              scale: 1,
-            });
-
-          if (
-            !Number.isFinite(
-              baseViewport.width,
-            ) ||
-            !Number.isFinite(
-              baseViewport.height,
-            ) ||
-            baseViewport.width <= 0 ||
-            baseViewport.height <= 0
-          ) {
-            return;
-          }
-
-          /*
-           * Save the true page dimensions.
-           */
-          setPageDimensions(
-            (previous) => {
-              const existing =
-                previous[
-                  pageNumber
-                ];
-
-              if (
-                existing &&
-                existing.width ===
-                  baseViewport.width &&
-                existing.height ===
-                  baseViewport.height
-              ) {
-                return previous;
-              }
-
-              return {
-                ...previous,
-                [pageNumber]: {
-                  width:
-                    baseViewport.width,
-                  height:
-                    baseViewport.height,
-                },
-              };
-            },
-          );
-
-          const availableWidth =
-            getAvailableWidth();
-
-          if (
-            availableWidth <= 0
-          ) {
-            return;
-          }
-
-          const widthScale =
-            availableWidth /
-            baseViewport.width;
-
-          /*
-           * Never render below 0.5 scale.
-           */
-          const scale =
-            Math.max(
-              widthScale,
-              0.5,
-            ) *
-            zoomRef.current;
-
-          const viewport =
-            page.getViewport({
-              scale,
-            });
-
-          const isMobile =
-            window.matchMedia(
-              "(max-width: 639px)",
-            ).matches;
-
-          const dpr =
-            Math.min(
-              window.devicePixelRatio ||
-                1,
-              isMobile
-                ? MAX_DPR_MOBILE
-                : MAX_DPR_DESKTOP,
-            );
-
-          const maxPixels =
-            isMobile
-              ? MAX_PIXELS_MOBILE
-              : MAX_PIXELS_DESKTOP;
-
-          let pixelWidth =
-            Math.max(
-              1,
-              Math.floor(
-                viewport.width *
-                  dpr,
-              ),
-            );
-
-          let pixelHeight =
-            Math.max(
-              1,
-              Math.floor(
-                viewport.height *
-                  dpr,
-              ),
-            );
-
-          /*
-           * Protect against huge pages.
-           */
-          const pixelCount =
-            pixelWidth *
-            pixelHeight;
-
-          if (
-            pixelCount >
-            maxPixels
-          ) {
-            const reduction =
-              Math.sqrt(
-                maxPixels /
-                  pixelCount,
-              );
-
-            pixelWidth =
-              Math.max(
-                1,
-                Math.floor(
-                  pixelWidth *
-                    reduction,
-                ),
-              );
-
-            pixelHeight =
-              Math.max(
-                1,
-                Math.floor(
-                  pixelHeight *
-                    reduction,
-                ),
-              );
-          }
-
-          const context =
-            canvas.getContext(
-              "2d",
-              {
-                alpha: false,
-              },
-            );
-
-          if (!context) {
-            return;
-          }
-
-          /*
-           * Clear any previous backing store.
-           */
-          canvas.width = 1;
-          canvas.height = 1;
-
-          canvas.width =
-            pixelWidth;
-
-          canvas.height =
-            pixelHeight;
-
-          canvas.style.width =
-            `${viewport.width}px`;
-
-          canvas.style.height =
-            `${viewport.height}px`;
-
-          context.setTransform(
-            1,
-            0,
-            0,
-            1,
-            0,
-            0,
-          );
-
-          context.fillStyle =
-            "#ffffff";
-
-          context.fillRect(
-            0,
-            0,
-            canvas.width,
-            canvas.height,
-          );
-
-          if (
-            generation !==
-            generationRef.current ||
-            !activePagesRef.current.has(
-              pageNumber,
-            )
-          ) {
-            return;
-          }
-
-          const renderTask =
-            page.render({
-              canvas,
-              canvasContext:
-                context,
-              viewport,
-              transform:
-                dpr !== 1
-                  ? [
-                      dpr,
-                      0,
-                      0,
-                      dpr,
-                      0,
-                      0,
-                    ]
-                  : undefined,
-            });
-
-          renderTasksRef.current[
-            pageNumber
-          ] = renderTask;
-
-          await renderTask.promise;
-
-          if (
-            generation !==
-            generationRef.current ||
-            !activePagesRef.current.has(
-              pageNumber,
-            )
-          ) {
-            return;
-          }
-
-          renderedPagesRef.current.add(
-            pageNumber,
-          );
-        } catch (error) {
-          if (
-            error &&
-            typeof error ===
-              "object" &&
-            "name" in error &&
-            error.name ===
-              "RenderingCancelledException"
-          ) {
-            return;
-          }
-
-          if (
-            generation !==
-            generationRef.current
-          ) {
-            return;
-          }
-
-          console.error(
-            `Failed to render PDF page ${pageNumber}:`,
-            error,
-          );
-        } finally {
-          renderTasksRef.current[
-            pageNumber
-          ] = null;
-
-          renderingPagesRef.current.delete(
-            pageNumber,
-          );
-
-          /*
-           * PDF.js page proxies can retain significant
-           * resources. Release them immediately.
-           */
-          if (
-            page &&
-            typeof (
-              page as {
-                cleanup?: () => void;
-              }
-            ).cleanup ===
-              "function"
-          ) {
-            try {
-              (
-                page as {
-                  cleanup: () => void;
-                }
-              ).cleanup();
-            } catch {
-              // Ignore page cleanup failures.
-            }
-          }
-
-          page = null;
-        }
-      },
-      [getAvailableWidth],
-    );
-
-  /* ------------------------------------------------------------------------ */
-  /* Render active pages sequentially                                         */
-  /* ------------------------------------------------------------------------ */
-
-  const renderActivePages =
-    useCallback(async () => {
-      if (
-        !documentReady ||
-        pageCount <= 0 ||
-        containerWidthRef.current <= 0
-      ) {
-        return;
-      }
-
-      const generation =
-        generationRef.current;
-
-      const pages =
-        Array.from(
-          activePagesRef.current,
-        ).sort(
-          (a, b) => a - b,
-        );
-
-      /*
-       * Render sequentially.
-       *
-       * Never ask PDF.js to render several large pages
-       * simultaneously on mobile Safari.
-       */
-      for (const pageNumber of pages) {
-        if (
-          generation !==
-          generationRef.current
-        ) {
-          return;
-        }
-
-        if (
-          !activePagesRef.current.has(
-            pageNumber,
-          )
-        ) {
-          continue;
-        }
-
-        if (
-          renderedPagesRef.current.has(
-            pageNumber,
-          )
-        ) {
-          continue;
-        }
-
-        if (
-          renderingPagesRef.current.has(
-            pageNumber,
-          )
-        ) {
-          continue;
-        }
-
-        /*
-         * React may not have mounted the canvas yet.
-         */
-        const canvas =
-          canvasRefs.current[
-            pageNumber
-          ];
-
-        if (!canvas) {
-          continue;
-        }
-
-        await renderPage(
-          pageNumber,
-          generation,
-        );
-      }
-    }, [
-      documentReady,
-      pageCount,
-      renderPage,
-    ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Initial active pages                                                     */
-  /* ------------------------------------------------------------------------ */
-
-  useEffect(() => {
-    if (
-      !documentReady ||
-      pageCount <= 0 ||
-      containerWidth <= 0
-    ) {
-      return;
-    }
-
-    /*
-     * First determine which pages should exist.
-     */
-    updateActivePages();
-
-    const frame =
-      requestAnimationFrame(() => {
-        /*
-         * React has now mounted the active canvases.
-         */
-        void renderActivePages();
-      });
-
-    return () => {
-      cancelAnimationFrame(
-        frame,
-      );
-    };
-  }, [
-    documentReady,
-    pageCount,
-    containerWidth,
-    updateActivePages,
-    renderActivePages,
-  ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Scroll                                                                    */
-  /* ------------------------------------------------------------------------ */
-
-  useEffect(() => {
-    if (
-      !documentReady ||
-      pageCount <= 0
-    ) {
-      return;
-    }
-
-    const element =
-      canvasContainerRef.current;
-
-    if (!element) {
       return;
     }
 
     let ticking = false;
 
-    function updateCurrentPage() {
-      const container =
-        canvasContainerRef.current;
+    const updateCurrentPage =
+      () => {
+        const scrollTop =
+          container.scrollTop;
 
-      if (!container) {
-        return;
-      }
+        const target =
+          scrollTop + 80;
 
-      const scrollTop =
-        container.scrollTop;
+        let closestPage = 1;
 
-      const position =
-        scrollTop + 32;
+        let closestDistance =
+          Number.POSITIVE_INFINITY;
 
-      let closestPage = 1;
-
-      let closestDistance =
-        Number.POSITIVE_INFINITY;
-
-      for (
-        let pageNumber = 1;
-        pageNumber <= pageCount;
-        pageNumber += 1
-      ) {
-        const page =
-          pageHostRefs.current[
-            pageNumber
-          ];
-
-        if (!page) {
-          continue;
-        }
-
-        const distance =
-          Math.abs(
-            page.offsetTop -
-              position,
-          );
-
-        if (
-          distance <
-          closestDistance
+        for (
+          let pageNumber = 1;
+          pageNumber <=
+          normalizedPageCount;
+          pageNumber += 1
         ) {
-          closestDistance =
-            distance;
+          const page =
+            pageRefs.current[
+              pageNumber
+            ];
 
-          closestPage =
-            pageNumber;
+          if (!page) {
+            continue;
+          }
+
+          const distance =
+            Math.abs(
+              page.offsetTop -
+                target,
+            );
+
+          if (
+            distance <
+            closestDistance
+          ) {
+            closestDistance =
+              distance;
+
+            closestPage =
+              pageNumber;
+          }
         }
-      }
 
-      setCurrentPage(
-        (previous) =>
-          previous ===
-          closestPage
-            ? previous
-            : closestPage,
-      );
-    }
+        setCurrentPage(
+          (previous) =>
+            previous ===
+            closestPage
+              ? previous
+              : closestPage,
+        );
+      };
 
-    function handleScroll() {
-      if (ticking) {
-        return;
-      }
+    const handleScroll =
+      () => {
+        if (ticking) {
+          return;
+        }
 
-      ticking = true;
+        ticking = true;
 
-      requestAnimationFrame(() => {
-        ticking = false;
+        window.requestAnimationFrame(
+          () => {
+            ticking = false;
+            updateCurrentPage();
+          },
+        );
+      };
 
-        updateCurrentPage();
-
-        /*
-         * Change which pages are mounted.
-         */
-        updateActivePages();
-
-        /*
-         * Render the newly mounted pages on the
-         * following frame.
-         */
-        requestAnimationFrame(() => {
-          void renderActivePages();
-        });
-      });
-    }
-
-    element.addEventListener(
+    container.addEventListener(
       "scroll",
       handleScroll,
       {
@@ -1495,118 +973,47 @@ export default function PdfPreview({
     );
 
     updateCurrentPage();
-    updateActivePages();
-
-    requestAnimationFrame(() => {
-      void renderActivePages();
-    });
 
     return () => {
-      element.removeEventListener(
+      container.removeEventListener(
         "scroll",
         handleScroll,
       );
     };
   }, [
-    documentReady,
-    pageCount,
-    updateActivePages,
-    renderActivePages,
+    src,
+    normalizedPageCount,
+    previewError,
   ]);
 
   /* ------------------------------------------------------------------------ */
   /* Zoom                                                                     */
   /* ------------------------------------------------------------------------ */
 
-  useEffect(() => {
-    if (
-      !documentReady ||
-      pageCount <= 0 ||
-      containerWidth <= 0
-    ) {
-      return;
-    }
-
-    /*
-     * Invalidate all current renders.
-     */
-    generationRef.current += 1;
-
-    /*
-     * Cancel current render tasks.
-     */
-    const renderingPages =
-      Array.from(
-        renderingPagesRef.current,
-      );
-
-    renderingPages.forEach(
-      cancelPageRender,
-    );
-
-    /*
-     * Release currently rendered canvases.
-     *
-     * The wrappers remain, but only active pages will
-     * receive a new canvas.
-     */
-    const renderedPages =
-      Array.from(
-        renderedPagesRef.current,
-      );
-
-    renderedPages.forEach(
-      releaseCanvas,
-    );
-
-    renderedPagesRef.current.clear();
-
-    const frame =
-      requestAnimationFrame(() => {
-        void renderActivePages();
-      });
-
-    return () => {
-      cancelAnimationFrame(
-        frame,
-      );
-    };
-  }, [
-    zoom,
-    documentReady,
-    pageCount,
-    containerWidth,
-    cancelPageRender,
-    releaseCanvas,
-    renderActivePages,
-  ]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Zoom controls                                                            */
-  /* ------------------------------------------------------------------------ */
-
   function zoomIn() {
-    setZoom((value) =>
+    setZoom((previous) =>
       Math.min(
         Number(
           (
-            value + 0.1
+            previous +
+            ZOOM_STEP
           ).toFixed(2),
         ),
-        2.5,
+        MAX_ZOOM,
       ),
     );
   }
 
   function zoomOut() {
-    setZoom((value) =>
+    setZoom((previous) =>
       Math.max(
         Number(
           (
-            value - 0.1
+            previous -
+            ZOOM_STEP
           ).toFixed(2),
         ),
-        0.6,
+        MIN_ZOOM,
       ),
     );
   }
@@ -1620,10 +1027,9 @@ export default function PdfPreview({
   /* ------------------------------------------------------------------------ */
 
   async function downloadPdf() {
-    if (
-      !src ||
-      downloading
-    ) {
+    const value = src.trim();
+
+    if (!value || downloading) {
       return;
     }
 
@@ -1632,7 +1038,7 @@ export default function PdfPreview({
       setDownloadError(false);
 
       const response =
-        await fetch(src, {
+        await fetch(value, {
           method: "GET",
           credentials: "omit",
         });
@@ -1653,18 +1059,21 @@ export default function PdfPreview({
       }
 
       const objectUrl =
-        URL.createObjectURL(blob);
+        window.URL.createObjectURL(
+          blob,
+        );
 
       const link =
-        document.createElement("a");
+        document.createElement(
+          "a",
+        );
+
+      link.href = objectUrl;
 
       link.download =
         getDownloadFilename(
           title,
         );
-
-      link.href =
-        objectUrl;
 
       link.style.display =
         "none";
@@ -1678,7 +1087,7 @@ export default function PdfPreview({
       link.remove();
 
       window.setTimeout(() => {
-        URL.revokeObjectURL(
+        window.URL.revokeObjectURL(
           objectUrl,
         );
       }, 2000);
@@ -1699,22 +1108,24 @@ export default function PdfPreview({
   /* ------------------------------------------------------------------------ */
 
   function openPdf() {
-    if (!src) {
+    const value = src.trim();
+
+    if (!value) {
       return;
     }
 
     window.open(
-      src,
+      value,
       "_blank",
       "noopener,noreferrer",
     );
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Empty state                                                              */
+  /* Empty source                                                             */
   /* ------------------------------------------------------------------------ */
 
-  if (!src) {
+  if (!src.trim()) {
     return (
       <div className="flex min-h-[260px] items-center justify-center rounded-2xl border bg-muted/20 p-8 text-center">
         <div>
@@ -1731,13 +1142,157 @@ export default function PdfPreview({
   }
 
   /* ------------------------------------------------------------------------ */
+  /* Preview unavailable                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  if (previewError) {
+    return (
+      <div className="overflow-hidden rounded-2xl border bg-muted/20 shadow-sm">
+        <div className="relative w-full">
+          <div className="flex items-center justify-between gap-3 border-b border-black/5 bg-background/90 px-4 py-3 backdrop-blur-xl sm:px-7">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full bg-bronze px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg">
+                <FileText size={13} />
+                PDF
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={openPdf}
+                className="inline-flex items-center gap-2 rounded-full bg-bronze px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg"
+              >
+                <ExternalLink
+                  size={14}
+                />
+
+                <span className="hidden sm:inline">
+                  Open
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void downloadPdf();
+                }}
+                disabled={
+                  downloading
+                }
+                className="inline-flex items-center gap-2 rounded-full bg-bronze px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {downloading ? (
+                  <Loader2
+                    size={14}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <Download
+                    size={14}
+                  />
+                )}
+
+                <span className="hidden sm:inline">
+                  {downloading
+                    ? "Downloading..."
+                    : "Download PDF"}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 p-8 text-center">
+            {fallbackThumbnailUrl ? (
+              <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-black/5 bg-white shadow-sm">
+                <img
+                  src={
+                    fallbackThumbnailUrl
+                  }
+                  alt={
+                    title
+                      ? `${title} PDF preview`
+                      : "PDF preview"
+                  }
+                  className="block h-auto w-full"
+                  draggable={false}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <FileText
+                    size={24}
+                  />
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold">
+                    PDF preview unavailable
+                  </p>
+
+                  <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+                    {previewError}
+                  </p>
+                </div>
+              </>
+            )}
+
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={openPdf}
+                className="inline-flex items-center gap-2 rounded-full bg-bronze px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory"
+              >
+                <ExternalLink
+                  size={14}
+                />
+                Open PDF
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void downloadPdf();
+                }}
+                disabled={
+                  downloading
+                }
+                className="inline-flex items-center gap-2 rounded-full border border-bronze/30 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition hover:border-bronze hover:text-bronze disabled:opacity-60"
+              >
+                {downloading ? (
+                  <Loader2
+                    size={14}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <Download
+                    size={14}
+                  />
+                )}
+
+                {downloading
+                  ? "Downloading..."
+                  : "Download PDF"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ------------------------------------------------------------------------ */
   /* Render                                                                   */
   /* ------------------------------------------------------------------------ */
 
   return (
     <div className="overflow-hidden rounded-2xl border bg-muted/20 shadow-sm">
       <div className="relative w-full">
-        {/* Toolbar */}
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Toolbar                                                            */}
+        {/* ------------------------------------------------------------------ */}
 
         <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-black/5 bg-background/90 px-4 py-3 backdrop-blur-xl sm:px-7">
           <div className="flex min-w-0 items-center gap-2">
@@ -1746,22 +1301,23 @@ export default function PdfPreview({
               PDF
             </div>
 
-            {pageCount > 0 && (
-              <span className="truncate text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                Page {currentPage} of{" "}
-                {pageCount}
-              </span>
-            )}
+            <span className="truncate text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+              Page {currentPage} of{" "}
+              {normalizedPageCount}
+            </span>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+
             {/* Desktop zoom */}
 
             <div className="hidden items-center gap-1 rounded-full border border-bronze/30 bg-white/80 p-1 shadow-sm sm:flex">
               <button
                 type="button"
                 onClick={zoomOut}
-                disabled={zoom <= 0.6}
+                disabled={
+                  zoom <= MIN_ZOOM
+                }
                 aria-label="Zoom out"
                 className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -1783,7 +1339,9 @@ export default function PdfPreview({
               <button
                 type="button"
                 onClick={zoomIn}
-                disabled={zoom >= 2.5}
+                disabled={
+                  zoom >= MAX_ZOOM
+                }
                 aria-label="Zoom in"
                 className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -1799,7 +1357,9 @@ export default function PdfPreview({
               aria-label="Reset zoom"
               className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white/80 shadow-sm transition hover:border-bronze hover:text-bronze sm:hidden"
             >
-              <RotateCcw size={14} />
+              <RotateCcw
+                size={14}
+              />
             </button>
 
             {/* Open */}
@@ -1809,7 +1369,9 @@ export default function PdfPreview({
               onClick={openPdf}
               className="inline-flex items-center gap-2 rounded-full bg-bronze px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze sm:px-4"
             >
-              <ExternalLink size={14} />
+              <ExternalLink
+                size={14}
+              />
 
               <span className="hidden sm:inline">
                 Open
@@ -1820,8 +1382,12 @@ export default function PdfPreview({
 
             <button
               type="button"
-              onClick={downloadPdf}
-              disabled={downloading}
+              onClick={() => {
+                void downloadPdf();
+              }}
+              disabled={
+                downloading
+              }
               className="inline-flex items-center gap-2 rounded-full bg-bronze px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory shadow-lg transition hover:bg-bronze disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
             >
               {downloading ? (
@@ -1842,186 +1408,128 @@ export default function PdfPreview({
           </div>
         </div>
 
-        {/* Loading */}
+        {/* ------------------------------------------------------------------ */}
+        {/* Pages                                                              */}
+        {/* ------------------------------------------------------------------ */}
 
-        {loading && (
-          <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <Loader2
-                size={24}
-                className="animate-spin text-bronze"
-              />
-            </div>
+        <div
+          ref={containerRef}
+          className="max-h-[75vh] overflow-y-auto overscroll-contain bg-muted/30 px-3 py-5 sm:px-6 sm:py-7"
+          style={{
+            WebkitOverflowScrolling:
+              "touch",
+          }}
+        >
+          <div className="mx-auto w-full max-w-4xl">
 
-            <div>
-              <p className="text-sm font-semibold">
-                Loading PDF
-              </p>
+            {Array.from(
+              {
+                length:
+                  normalizedPageCount,
+              },
+              (_, index) => {
+                const pageNumber =
+                  index + 1;
 
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Preparing the complete document…
-              </p>
-            </div>
+                const pageUrl =
+                  pageUrls[
+                    pageNumber
+                  ];
+
+                const state =
+                  pageStates[
+                    pageNumber
+                  ];
+
+                const loaded =
+                  state?.loaded ??
+                  false;
+
+                const hasError =
+                  state?.error ??
+                  false;
+
+                return (
+                  <PdfPage
+                    key={pageNumber}
+                    pageNumber={
+                      pageNumber
+                    }
+                    pageUrl={pageUrl}
+                    title={title}
+                    zoom={zoom}
+                    loaded={loaded}
+                    hasError={hasError}
+                    fallbackThumbnailUrl={
+                      fallbackThumbnailUrl
+                    }
+                    normalizedPageCount={
+                      normalizedPageCount
+                    }
+                    onLoad={
+                      handlePageLoad
+                    }
+                    onError={
+                      handlePageError
+                    }
+                    onRetry={
+                      retryPage
+                    }
+                    registerPageRef={
+                      registerPageRef
+                    }
+                  />
+                );
+              },
+            )}
+
           </div>
-        )}
+        </div>
 
-        {/* Error */}
+        {/* ------------------------------------------------------------------ */}
+        {/* Mobile controls                                                    */}
+        {/* ------------------------------------------------------------------ */}
 
-        {!loading &&
-          previewError && (
-            <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-                <FileText size={24} />
-              </div>
+        <div className="flex items-center justify-center gap-2 border-t border-black/5 bg-background/90 px-4 py-3 backdrop-blur-xl sm:hidden">
+          <button
+            type="button"
+            onClick={zoomOut}
+            disabled={
+              zoom <= MIN_ZOOM
+            }
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:opacity-40"
+            aria-label="Zoom out"
+          >
+            <Minus size={14} />
+          </button>
 
-              <div>
-                <p className="text-sm font-semibold">
-                  PDF preview unavailable
-                </p>
+          <button
+            type="button"
+            onClick={resetZoom}
+            className="flex h-9 min-w-16 items-center justify-center rounded-full border border-bronze/30 bg-white px-3 text-[10px] font-semibold shadow-sm"
+          >
+            {Math.round(
+              zoom * 100,
+            )}
+            %
+          </button>
 
-                <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
-                  {previewError}
-                </p>
-              </div>
+          <button
+            type="button"
+            onClick={zoomIn}
+            disabled={
+              zoom >= MAX_ZOOM
+            }
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:opacity-40"
+            aria-label="Zoom in"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={openPdf}
-                  className="inline-flex items-center gap-2 rounded-full bg-bronze px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ivory"
-                >
-                  <ExternalLink size={14} />
-                  Open PDF
-                </button>
-
-                <button
-                  type="button"
-                  onClick={downloadPdf}
-                  disabled={downloading}
-                  className="inline-flex items-center gap-2 rounded-full border border-bronze/30 bg-white px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition hover:border-bronze hover:text-bronze disabled:opacity-60"
-                >
-                  {downloading ? (
-                    <Loader2
-                      size={14}
-                      className="animate-spin"
-                    />
-                  ) : (
-                    <Download size={14} />
-                  )}
-
-                  {downloading
-                    ? "Downloading..."
-                    : "Download PDF"}
-                </button>
-              </div>
-            </div>
-          )}
-
-        {/* PDF */}
-
-        {!loading &&
-          !previewError &&
-          documentReady && (
-            <div className="relative">
-              <div
-                ref={canvasContainerRef}
-                className="max-h-[75vh] overflow-y-auto overscroll-contain bg-muted/30 px-3 py-5 sm:px-6 sm:py-7"
-                style={{
-                  WebkitOverflowScrolling:
-                    "touch",
-                }}
-              >
-                {Array.from(
-                  {
-                    length: pageCount,
-                  },
-                  (_, index) => {
-                    const pageNumber =
-                      index + 1;
-
-                    const height =
-                      getPageHeight(
-                        pageNumber,
-                      );
-
-                    const isActive =
-                      activePages.has(
-                        pageNumber,
-                      );
-
-                    return (
-                      <div
-                        key={pageNumber}
-                        ref={(element) => {
-                          pageHostRefs.current[
-                            pageNumber
-                          ] = element;
-                        }}
-                        className="mb-5 flex w-full justify-center last:mb-0"
-                        style={{
-                          minHeight:
-                            `${height}px`,
-                        }}
-                      >
-                        {isActive && (
-                          <canvas
-                            ref={(element) => {
-                              canvasRefs.current[
-                                pageNumber
-                              ] = element;
-                            }}
-                            className="block max-w-full rounded-sm bg-white shadow-sm"
-                            aria-label={`PDF page ${pageNumber}`}
-                          />
-                        )}
-                      </div>
-                    );
-                  },
-                )}
-              </div>
-            </div>
-          )}
-
-        {/* Mobile controls */}
-
-        {!loading &&
-          !previewError &&
-          documentReady && (
-            <div className="flex items-center justify-center gap-2 border-t border-black/5 bg-background/90 px-4 py-3 backdrop-blur-xl sm:hidden">
-              <button
-                type="button"
-                onClick={zoomOut}
-                disabled={zoom <= 0.6}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:opacity-40"
-                aria-label="Zoom out"
-              >
-                <Minus size={14} />
-              </button>
-
-              <button
-                type="button"
-                onClick={resetZoom}
-                className="flex h-9 min-w-16 items-center justify-center rounded-full border border-bronze/30 bg-white px-3 text-[10px] font-semibold shadow-sm"
-              >
-                {Math.round(
-                  zoom * 100,
-                )}
-                %
-              </button>
-
-              <button
-                type="button"
-                onClick={zoomIn}
-                disabled={zoom >= 2.5}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-bronze/30 bg-white shadow-sm transition hover:border-bronze hover:text-bronze disabled:opacity-40"
-                aria-label="Zoom in"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          )}
-
-        {/* Download error */}
+        {/* ------------------------------------------------------------------ */}
+        {/* Download error                                                     */}
+        {/* ------------------------------------------------------------------ */}
 
         {downloadError && (
           <div className="absolute bottom-4 left-4 right-4 z-40 rounded-xl border border-destructive/20 bg-background/95 p-3 text-center shadow-sm backdrop-blur">
@@ -2037,10 +1545,15 @@ export default function PdfPreview({
             <button
               type="button"
               onClick={() => {
-                setDownloadError(false);
+                setDownloadError(
+                  false,
+                );
+
                 void downloadPdf();
               }}
-              disabled={downloading}
+              disabled={
+                downloading
+              }
               className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] underline underline-offset-4 disabled:opacity-50"
             >
               Try again
@@ -2051,3 +1564,11 @@ export default function PdfPreview({
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Exports                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export { PdfPreview };
+
+export default PdfPreview;
