@@ -34,13 +34,6 @@ export default function Navbar() {
 
   /*
    * Page-level theme acts as our fallback.
-   *
-   * Example:
-   *
-   * <PageLayout theme="light">
-   *
-   * If a page has no themed sections, the navbar
-   * remains light.
    */
   const { theme: pageTheme } = usePageTheme();
 
@@ -49,7 +42,7 @@ export default function Navbar() {
 
   /*
    * Detect the section currently underneath
-   * the navbar.
+   * the floating navbar.
    */
   useEffect(() => {
     const sections = Array.from(
@@ -65,15 +58,11 @@ export default function Navbar() {
 
     const updateSectionTheme = () => {
       /*
-      * Position slightly below the floating navbar.
-      * This gives us a reliable "theme detection line".
-      */
+       * Position slightly below the floating navbar.
+       * This acts as our theme detection line.
+       */
       const detectionPoint = 100;
 
-      /*
-      * Find the section that currently occupies
-      * the detection point.
-      */
       let activeSection: HTMLElement | null = null;
 
       for (const section of sections) {
@@ -89,13 +78,9 @@ export default function Navbar() {
       }
 
       /*
-      * If no section is directly underneath the
-      * detection point, find the closest section
-      * above it.
-      *
-      * This prevents the navbar from jumping back
-      * to the previous theme during small gaps.
-      */
+       * If no section occupies the detection point,
+       * use the closest section above it.
+       */
       if (!activeSection) {
         const sectionsAbove = sections
           .filter(
@@ -127,23 +112,14 @@ export default function Navbar() {
       }
     };
 
-    /*
-    * Check immediately.
-    */
     updateSectionTheme();
 
-    /*
-    * Recalculate while scrolling.
-    */
     window.addEventListener(
       "scroll",
       updateSectionTheme,
       { passive: true }
     );
 
-    /*
-    * Also recalculate when the viewport changes.
-    */
     window.addEventListener(
       "resize",
       updateSectionTheme
@@ -163,16 +139,17 @@ export default function Navbar() {
   }, [pathname, pageTheme]);
 
   /*
-   * Scroll behaviour:
+   * Floating navbar scroll behaviour.
    *
    * At the top:
-   * Navbar is visible and has no heavy shadow.
+   * - visible
+   * - transparent/light
    *
    * Scrolling down:
-   * Navbar disappears.
+   * - hides
    *
    * Scrolling up:
-   * Navbar returns.
+   * - returns
    */
   useMotionValueEvent(scrollY, "change", (latest) => {
     const previous = scrollY.getPrevious() ?? 0;
@@ -195,12 +172,13 @@ export default function Navbar() {
   });
 
   /*
-   * Get the configuration for the currently
-   * visible section.
+   * Current section theme configuration.
    */
   const config = pageThemes[sectionTheme];
   const navbar = config.navbar;
   const accent = config.accent;
+
+  const isLight = sectionTheme === "light";
 
   /*
    * Active navigation item.
@@ -217,7 +195,11 @@ export default function Navbar() {
   };
 
   /*
-   * Explore button styling.
+   * Explore button.
+   *
+   * Gold/bronze remains the primary action.
+   * Blue is introduced only as a subtle hover
+   * counterpoint.
    */
   const exploreButton = [
     "border px-4 py-2.5",
@@ -227,12 +209,32 @@ export default function Navbar() {
 
     navbar.border,
     accent.text,
-    accent.hoverBackground,
-    accent.hoverText,
-    accent.hoverBorder,
+
+    "hover:-translate-y-0.5",
+    "hover:border-gold",
+    "hover:bg-gold",
+    "hover:text-charcoal",
+
+    "focus-visible:outline-none",
+    "focus-visible:ring-2",
+    "focus-visible:ring-blue/30",
+    "focus-visible:ring-offset-2",
+
+    isLight
+      ? "focus-visible:ring-offset-ivory"
+      : "focus-visible:ring-offset-charcoal",
   ]
     .filter(Boolean)
     .join(" ");
+
+  /*
+   * Navbar theme foundation.
+   */
+  const navbarBackground = scrolled
+    ? navbar.background
+        .replace("/40", "/90")
+        .replace("/75", "/90")
+    : navbar.background;
 
   return (
     <motion.header
@@ -250,37 +252,94 @@ export default function Navbar() {
       <div className="mx-auto max-w-6xl">
         <nav
           className={[
-            "relative flex items-center justify-between",
+            /*
+             * IMPORTANT:
+             * Do NOT use overflow-hidden here.
+             *
+             * MobileMenu renders an absolutely positioned
+             * dropdown outside the navbar's visual bounds.
+             * overflow-hidden would clip that dropdown.
+             */
+            "group/nav relative flex items-center justify-between",
             "border px-3 py-2.5",
             "transition-all duration-500 ease-out",
+            "backdrop-blur-2xl",
 
             navbar.border,
+            navbarBackground,
 
             scrolled
-              ? navbar.background
-                  .replace("/40", "/90")
-                  .replace("/75", "/90")
-              : navbar.background,
-
-            scrolled ? "shadow-2xl" : "",
-
-            "backdrop-blur-2xl",
+              ? "shadow-[0_18px_55px_rgba(0,0,0,0.18)]"
+              : "shadow-none",
           ]
             .filter(Boolean)
             .join(" ")}
         >
+          {/* =====================================================
+              SUBTLE NAVBAR ATMOSPHERE
+          ====================================================== */}
+
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 overflow-hidden"
+          >
+            {/* Blue atmospheric wash */}
+            <div
+              className={[
+                "absolute -right-20 -top-24 h-48 w-48",
+                "rounded-full blur-3xl",
+                "transition-opacity duration-700",
+                isLight
+                  ? "bg-blue/[0.045]"
+                  : "bg-blue/[0.08]",
+                "opacity-70 group-hover/nav:opacity-100",
+              ].join(" ")}
+            />
+
+            {/* Gold counterbalance */}
+            <div
+              className={[
+                "absolute -left-16 -bottom-24 h-40 w-40",
+                "rounded-full blur-3xl",
+                isLight
+                  ? "bg-gold/[0.035]"
+                  : "bg-gold/[0.06]",
+              ].join(" ")}
+            />
+
+            {/* Fine blue horizon */}
+            <span
+              className={[
+                "absolute left-0 top-0 h-px",
+                "w-1/3",
+                "bg-gradient-to-r",
+                "from-transparent via-blue-soft/25 to-transparent",
+              ].join(" ")}
+            />
+
+            {/* Fine gold horizon */}
+            <span
+              className={[
+                "absolute bottom-0 right-0 h-px",
+                "w-1/4",
+                "bg-gradient-to-l",
+                "from-transparent via-gold/20 to-transparent",
+              ].join(" ")}
+            />
+          </div>
+
           {/* =====================================================
               BRAND
           ====================================================== */}
 
           <Link
             href="/"
-            className="group flex shrink-0 items-center gap-3 pl-1"
+            className="group relative z-10 flex shrink-0 items-center gap-3 pl-1"
           >
             {/* OS Logo */}
             <div
               className={[
-                "flex h-8 w-8 shrink-0 items-center justify-center",
+                "relative flex h-8 w-8 shrink-0 items-center justify-center",
                 "rounded-full border",
                 "text-[10px] font-semibold tracking-tight",
                 "transition-all duration-300",
@@ -288,14 +347,27 @@ export default function Navbar() {
                 accent.text,
                 navbar.border,
 
-                accent.hoverBackground,
-                accent.hoverText,
-                accent.hoverBorder,
+                "group-hover:border-blue-soft/45",
+                "group-hover:bg-blue/[0.08]",
+                "group-hover:text-blue-deep",
+
+                "dark:group-hover:text-blue-soft",
               ]
                 .filter(Boolean)
                 .join(" ")}
             >
               OS
+
+              <span
+                aria-hidden="true"
+                className={[
+                  "pointer-events-none absolute -inset-1",
+                  "rounded-full border border-transparent",
+                  "transition-all duration-500",
+                  "group-hover:border-blue-soft/15",
+                  "group-hover:scale-110",
+                ].join(" ")}
+              />
             </div>
 
             {/* Ministry Name */}
@@ -317,6 +389,7 @@ export default function Navbar() {
                   "sm:text-[8px] sm:tracking-[0.28em]",
                   navbar.accent,
                   "transition-colors duration-300",
+                  "group-hover:text-blue-soft",
                 ].join(" ")}
               >
                 Ministries
@@ -328,7 +401,7 @@ export default function Navbar() {
               DESKTOP NAVIGATION
           ====================================================== */}
 
-          <div className="hidden items-center gap-0.5 lg:flex">
+          <div className="relative z-10 hidden items-center gap-0.5 lg:flex">
             {navigation.map((item) => {
               const active = isActive(item.href);
 
@@ -340,24 +413,49 @@ export default function Navbar() {
                     active ? "page" : undefined
                   }
                   className={[
-                    "px-3 py-2",
+                    "group/link relative px-3 py-2",
                     "text-[9px] font-medium uppercase",
                     "tracking-[0.11em]",
                     "transition-all duration-300",
                     "xl:px-3.5 xl:text-[10px]",
 
                     active
-                      ? `${navbar.activeBackground} ${navbar.activeText}`
+                      ? [
+                          navbar.activeBackground,
+                          navbar.activeText,
+                        ].join(" ")
                       : [
                           navbar.mutedText,
                           navbar.accentHover,
-                          "hover:bg-black/5",
+                          "hover:bg-black/[0.035]",
+                          isLight
+                            ? "hover:text-blue-deep"
+                            : "hover:text-blue-soft",
                         ].join(" "),
                   ]
                     .filter(Boolean)
                     .join(" ")}
                 >
                   {item.label}
+
+                  {/* Active / hover underline */}
+                  <span
+                    aria-hidden="true"
+                    className={[
+                      "absolute bottom-0 left-1/2",
+                      "-translate-x-1/2",
+                      "h-px transition-all duration-500",
+
+                      active
+                        ? "w-[55%] bg-gradient-to-r from-gold via-blue-soft to-transparent"
+                        : [
+                            "w-0",
+                            "bg-gradient-to-r",
+                            "from-gold via-blue-soft to-transparent",
+                            "group-hover/link:w-[45%]",
+                          ].join(" "),
+                    ].join(" ")}
+                  />
                 </Link>
               );
             })}
@@ -367,17 +465,16 @@ export default function Navbar() {
               ACTIONS
           ====================================================== */}
 
-          <div className="flex items-center gap-2">
-            {/* Explore */}
+          <div className="relative z-10 flex items-center gap-2">
+            {/* Explore
             <Link
               href="/resources"
-              className={[
-                "hidden lg:block",
-                exploreButton,
-              ].join(" ")}
+              className={exploreButton}
             >
-              Explore
-            </Link>
+              <span className="relative z-10">
+                Explore
+              </span>
+            </Link> */}
 
             {/* Mobile / Tablet Menu */}
             <MobileMenu theme={sectionTheme} />

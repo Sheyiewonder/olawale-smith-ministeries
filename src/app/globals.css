@@ -1,16 +1,41 @@
 @import "tailwindcss";
 
 :root {
+  /* -------------------------------------------------------------------------- */
+  /* Core Brand                                                                  */
+  /* -------------------------------------------------------------------------- */
+
   --charcoal: #11110f;
   --charcoal-soft: #191916;
 
   --ivory: #f5f0e6;
   --ivory-muted: #e9e1d2;
 
+  /* -------------------------------------------------------------------------- */
+  /* Warm Brand Accents                                                          */
+  /* -------------------------------------------------------------------------- */
+
   --gold: #b79a5b;
   --gold-light: #c9b47d;
 
   --bronze: #8c6f45;
+
+  /* -------------------------------------------------------------------------- */
+  /* Cool Accent Family                                                          */
+  /*                                                                            */
+  /* Blue is intentionally secondary. It should create atmosphere, depth,     */
+  /* transitions and subtle interaction without replacing the warm identity.  */
+  /* -------------------------------------------------------------------------- */
+
+  --blue-deep: #245a96;
+  --blue: #3b82d0;
+  --blue-soft: #6fa8e6;
+  --blue-light: #8fa8c2;
+  --blue-pale: #e5eff8;
+
+  /* -------------------------------------------------------------------------- */
+  /* Neutral                                                                      */
+  /* -------------------------------------------------------------------------- */
 
   --white: #ffffff;
 
@@ -19,24 +44,169 @@
 }
 
 @theme inline {
+  /* Typography */
   --font-sans: var(--font-bricolage), sans-serif;
+
+  /* Core */
   --color-charcoal: var(--charcoal);
   --color-charcoal-soft: var(--charcoal-soft);
 
+  /* Warm surfaces */
   --color-ivory: var(--ivory);
   --color-ivory-muted: var(--ivory-muted);
 
+  /* Warm accents */
   --color-gold: var(--gold);
   --color-gold-light: var(--gold-light);
-
   --color-bronze: var(--bronze);
 
+  /* Cool accents */
+  --color-blue-deep: var(--blue-deep);
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
+  --color-blue-light: var(--blue-light);
+  --color-blue-pale: var(--blue-pale);
+
+  /* Neutral */
   --color-white: var(--white);
 }
 
 @layer components {
+  /* -------------------------------------------------------------------------- */
+  /* Inputs                                                                      */
+  /* -------------------------------------------------------------------------- */
+
   .input {
     @apply h-12 w-full border border-charcoal/10 bg-white px-4 text-sm text-charcoal outline-none transition-all placeholder:text-charcoal/30 focus:border-bronze/50 focus:ring-2 focus:ring-bronze/10;
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Blue Atmospheric Surfaces                                                   */
+  /* -------------------------------------------------------------------------- */
+
+  /*
+   * Very subtle blue atmosphere over charcoal.
+   *
+   * Use this when a dark section needs a little more depth without visibly
+   * becoming a blue section.
+   */
+  .section-dark-blue {
+    background:
+      radial-gradient(
+        circle at 80% 15%,
+        rgb(59 130 208 / 0.16),
+        transparent 38%
+      ),
+      var(--charcoal);
+    color: var(--ivory);
+  }
+
+  /*
+   * Soft blue wash for light sections.
+   *
+   * Useful for Articles, Resource discovery and secondary content sections.
+   */
+  .section-blue-wash {
+    background:
+      linear-gradient(
+        135deg,
+        rgb(229 239 248 / 0.72),
+        var(--ivory) 60%
+      );
+    color: var(--charcoal);
+  }
+
+  /*
+   * A subtle cool glow that can be placed behind hero/media content.
+   */
+  .blue-glow {
+    background:
+      radial-gradient(
+        circle at center,
+        rgb(59 130 208 / 0.14),
+        transparent 65%
+      );
+  }
+
+  /*
+   * More concentrated blue atmosphere for large visual compositions.
+   */
+  .blue-atmosphere {
+    background:
+      radial-gradient(
+        circle at 75% 25%,
+        rgb(59 130 208 / 0.18),
+        transparent 40%
+      ),
+      radial-gradient(
+        circle at 20% 80%,
+        rgb(111 168 230 / 0.08),
+        transparent 35%
+      );
+  }
+
+  /*
+   * Blue-to-charcoal atmospheric transition.
+   *
+   * Designed for visual transitions between sections rather than standalone
+   * content backgrounds.
+   */
+  .blue-charcoal-transition {
+    background:
+      linear-gradient(
+        180deg,
+        var(--blue-deep) 0%,
+        var(--charcoal) 100%
+      );
+  }
+
+  /*
+   * Extremely subtle blue overlay for imagery.
+   *
+   * Intended to sit over photographs without noticeably changing skin tones
+   * or destroying the original image character.
+   */
+  .image-blue-overlay {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .image-blue-overlay::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    background:
+      linear-gradient(
+        135deg,
+        rgb(36 90 150 / 0.10),
+        transparent 55%
+      );
+    mix-blend-mode: multiply;
+  }
+
+  /*
+   * Blue-tinted border used for subtle interactive surfaces.
+   */
+  .blue-border {
+    border-color: rgb(59 130 208 / 0.22);
+  }
+
+  /*
+   * Subtle blue interactive glow.
+   *
+   * Useful for search, filters, tabs, media controls and selected states.
+   */
+  .blue-focus {
+    transition:
+      border-color 300ms ease,
+      box-shadow 300ms ease;
+  }
+
+  .blue-focus:focus-visible {
+    border-color: rgb(59 130 208 / 0.55);
+    box-shadow: 0 0 0 3px rgb(59 130 208 / 0.12);
+    outline: none;
   }
 }
 
@@ -106,6 +276,10 @@ img {
   background: var(--ivory);
   color: var(--charcoal);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Admin                                                                       */
+/* -------------------------------------------------------------------------- */
 
 .admin-input {
   width: 100%;
