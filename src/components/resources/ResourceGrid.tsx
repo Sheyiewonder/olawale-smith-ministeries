@@ -17,13 +17,13 @@ export default function ResourceGrid({
     return (
       <div
         className={[
-          "rounded-3xl border p-12 text-center",
+          "rounded-3xl border p-10 text-center sm:p-12",
           config.page.border,
         ].join(" ")}
       >
         <p
           className={[
-            "section-heading text-2xl",
+            "section-heading text-xl sm:text-2xl",
             config.page.foreground,
           ].join(" ")}
         >
@@ -32,7 +32,7 @@ export default function ResourceGrid({
 
         <p
           className={[
-            "mt-3 text-sm",
+            "mt-2.5 text-xs sm:mt-3 sm:text-sm",
             config.page.muted,
           ].join(" ")}
         >
@@ -58,7 +58,16 @@ export default function ResourceGrid({
   );
 
   return (
-    <div className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+    <div
+      className={[
+        "grid",
+        "grid-cols-2",
+        "gap-x-4 gap-y-8",
+        "sm:grid-cols-3 sm:gap-x-5 sm:gap-y-9",
+        "md:grid-cols-4",
+        "lg:grid-cols-5 lg:gap-x-6 lg:gap-y-10",
+      ].join(" ")}
+    >
       {resources.map((resource) => (
         <ResourceCard
           key={resource.id}
