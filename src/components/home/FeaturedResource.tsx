@@ -154,14 +154,6 @@ return ( <Section
           deepen your understanding and inspire Kingdom impact.
         </p>
 
-        <Link
-          href="/resources"
-          className="group mt-9 inline-flex min-w-[170px] items-center justify-center border border-gold/60 bg-transparent px-7 py-4 text-xs font-bold uppercase tracking-[0.18em] text-gold transition-all duration-300 hover:-translate-y-0.5 hover:border-gold hover:bg-gold hover:text-charcoal"
-        >
-          <span>See more</span>
-
-          <span className="ml-3 h-px w-0 bg-charcoal transition-all duration-300 group-hover:w-5" />
-        </Link>
       </div>
 
       {/* Featured resources */}
@@ -323,8 +315,17 @@ return ( <Section
             </p>
           </div>
         )}
+        
       </div>
     </div>
+    <Link
+      href="/resources"
+        className="group mt-9 inline-flex min-w-[170px] items-center justify-center border border-gold/60 bg-transparent px-7 py-4 text-xs font-bold uppercase tracking-[0.18em] text-gold transition-all duration-300 hover:-translate-y-0.5 hover:border-gold hover:bg-gold hover:text-charcoal"
+    >
+      <span>See more</span>
+
+      <span className="ml-3 h-px w-0 bg-charcoal transition-all duration-300 group-hover:w-5" />
+    </Link>
   </div>
 </Section>
 

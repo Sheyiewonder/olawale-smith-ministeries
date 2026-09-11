@@ -303,3 +303,17 @@ img {
   border-color: rgb(180 130 40 / 0.5);
   box-shadow: 0 0 0 3px rgb(180 130 40 / 0.1);
 }
+
+@keyframes roll-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-roll-slow {
+  animation: roll-slow 24s linear infinite;
+}
