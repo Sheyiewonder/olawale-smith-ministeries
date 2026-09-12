@@ -18,6 +18,7 @@ const navigation = [
   { label: "About", href: "/about" },
   { label: "Invite", href: "/invite" },
   { label: "Partner With Us", href: "/partner" },
+  { label: "Connect", href: "/connect" },
 ];
 
 interface MobileMenuProps {
