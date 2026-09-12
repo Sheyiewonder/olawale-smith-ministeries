@@ -637,12 +637,6 @@ export default function AboutSection() {
                     Manager, and Achor. He currently pastors in The Redeemed
                     Christian Church of God, Grace...
                   </p>
-
-                  <p>
-                    His ministry is centered on the Word of God, spiritual
-                    growth, and the transformation of lives through the message
-                    of Christ.
-                  </p>
                 </div>
               </Reveal>
 
