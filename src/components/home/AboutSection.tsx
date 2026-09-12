@@ -24,27 +24,47 @@ const profileImages = {
 };
 
 const ministryActivities = [
-  {
+    {
     id: 1,
-    src: "/images/ministry/activity-01.jpg",
+    src: "/images/pastor olawale smith 017.jpg",
+    alt: "Pastor Olawale Smith & his beautiful wife",
+    tag: "Family",
+    location: "Church Gathering",
+    date: "2026",
+    size: "large",
+  },
+
+  {
+    id: 2,
+    src: "/images/pastor olawale smith 026.jpg",
+    alt: "Pastor Olawale Smith engaging with people",
+    tag: "Family",
+    location: "Church Gathering",
+    date: "2026",
+    size: "large",
+  },
+
+  {
+    id: 3,
+    src: "/images/pastor olawale smith 013.jpg",
     alt: "Pastor Olawale Smith ministering",
-    tag: "Teaching",
+    tag: "Church",
     location: "Ministry Gathering",
     date: "2026",
     size: "large",
   },
   {
-    id: 2,
-    src: "/images/ministry/activity-02.jpg",
-    alt: "Pastor Olawale Smith speaking at a ministry gathering",
-    tag: "Conference",
+    id: 4,
+    src: "/images/pastor olawale smith 010.jpg",
+    alt: "Pastor Olawale Smith at a church gathering",
+    tag: "Pastoring",
     location: "Conference",
     date: "2026",
     size: "small",
   },
   {
-    id: 3,
-    src: "/images/ministry/activity-03.jpg",
+    id: 5,
+    src: "/images/pastor olawale smith 027.jpg",
     alt: "Ministry worship gathering",
     tag: "Worship",
     location: "Church Gathering",
@@ -52,26 +72,26 @@ const ministryActivities = [
     size: "small",
   },
   {
-    id: 4,
-    src: "/images/ministry/activity-04.jpg",
-    alt: "Pastor Olawale Smith with members of the ministry",
+    id: 6,
+    src: "/images/pastor olawale smith 029.jpg",
+    alt: "Pastor Olawale Smith during a church event",
     tag: "Community",
     location: "Ministry Community",
     date: "2026",
-    size: "wide",
+    size: "large",
   },
   {
-    id: 5,
-    src: "/images/ministry/activity-05.jpg",
+    id: 7,
+    src: "/images/pastor olawale smith 036.jpg",
     alt: "Pastor Olawale Smith during a teaching session",
     tag: "Word & Teaching",
-    location: "Ministry Gathering",
+    location: "Teaching Podcast",
     date: "2026",
     size: "small",
   },
   {
-    id: 6,
-    src: "/images/ministry/activity-06.jpg",
+    id: 8,
+    src: "/images/pastor olawale smith 028.jpg",
     alt: "Pastor Olawale Smith during prayer",
     tag: "Prayer",
     location: "Prayer Gathering",
@@ -79,20 +99,29 @@ const ministryActivities = [
     size: "small",
   },
   {
-    id: 7,
-    src: "/images/ministry/activity-07.jpg",
-    alt: "Pastor Olawale Smith at a ministry event",
+    id: 9,
+    src: "/images/pastor olawale smith 009.jpg",
+    alt: "Pastor Olawale Smith on evangelism",
     tag: "Outreach",
     location: "Ministry Outreach",
     date: "2026",
     size: "large",
   },
   {
-    id: 8,
-    src: "/images/ministry/activity-08.jpg",
+    id: 10,
+    src: "/images/pastor olawale smith 034.jpg",
     alt: "Pastor Olawale Smith engaging with people",
     tag: "Leadership",
-    location: "Ministry Gathering",
+    location: "Love Feast",
+    date: "2026",
+    size: "small",
+  },
+  {
+    id: 11,
+    src: "/images/pastor olawale smith 019.jpg",
+    alt: "Pastor Olawale Smith praying passionately",
+    tag: "Prayer",
+    location: "Pastoral Ministry",
     date: "2026",
     size: "small",
   },
@@ -579,7 +608,7 @@ export default function AboutSection() {
             <div className="flex flex-col justify-center lg:pt-8">
               <Reveal delay={0.18}>
                 <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-blue-deep">
-                  The Man Behind the Ministry
+                  Meet The Man of God
                 </p>
               </Reveal>
 
@@ -592,16 +621,16 @@ export default function AboutSection() {
               <Reveal delay={0.3}>
                 <div className="mt-7 max-w-2xl space-y-5 text-sm leading-8 text-charcoal/55 sm:text-base">
                   <p>
-                    Pastor Olawale Smith is a minister committed to the work
-                    of the Gospel and to helping people encounter Christ,
-                    grow in faith, and live with kingdom purpose.
+                    Pastor Olawale Smith is a born-again child of God, burning with a special passion to reach the world for Christ. 
+                    He is a preacher, a teacher, a public speaker, a prolific reader, and a writer of the words of the gospel of Jesus Christ. 
+                    His ministries involve evangelism, teaching, prophecy, and deliverance. In all, he ministers in various gifts of the Holy Spirit to the GLORY OF GOD ALMIGHTY.
                   </p>
 
                   <p>
-                    Through teaching, preaching, leadership, prayer, and
-                    ministry engagements, his work continues to reach people
-                    in different places and across different expressions of
-                    ministry.
+                    He is graced with a leadership instinct; he takes responsibility in every facet of life where he finds himself, 
+                    which eventually puts him at the forefront and in leadership roles in all his circles of influence. 
+                    He is an intelligent idea creator, innovative-events developer, Manager, and Achor. 
+                    He currently pastors in The Redeemed Christian Church of God, Grace...
                   </p>
 
                   <p>
