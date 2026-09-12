@@ -24,7 +24,7 @@ const profileImages = {
 };
 
 const ministryActivities = [
-    {
+  {
     id: 1,
     src: "/images/pastor olawale smith 017.jpg",
     alt: "Pastor Olawale Smith & his beautiful wife",
@@ -33,7 +33,6 @@ const ministryActivities = [
     date: "2026",
     size: "large",
   },
-
   {
     id: 2,
     src: "/images/pastor olawale smith 026.jpg",
@@ -43,7 +42,6 @@ const ministryActivities = [
     date: "2026",
     size: "large",
   },
-
   {
     id: 3,
     src: "/images/pastor olawale smith 013.jpg",
@@ -621,22 +619,29 @@ export default function AboutSection() {
               <Reveal delay={0.3}>
                 <div className="mt-7 max-w-2xl space-y-5 text-sm leading-8 text-charcoal/55 sm:text-base">
                   <p>
-                    Pastor Olawale Smith is a born-again child of God, burning with a special passion to reach the world for Christ. 
-                    He is a preacher, a teacher, a public speaker, a prolific reader, and a writer of the words of the gospel of Jesus Christ. 
-                    His ministries involve evangelism, teaching, prophecy, and deliverance. In all, he ministers in various gifts of the Holy Spirit to the GLORY OF GOD ALMIGHTY.
+                    Pastor Olawale Smith is a born-again child of God, burning
+                    with a special passion to reach the world for Christ. He
+                    is a preacher, a teacher, a public speaker, a prolific
+                    reader, and a writer of the words of the gospel of Jesus
+                    Christ. His ministries involve evangelism, teaching,
+                    prophecy, and deliverance. In all, he ministers in various
+                    gifts of the Holy Spirit to the GLORY OF GOD ALMIGHTY.
                   </p>
 
                   <p>
-                    He is graced with a leadership instinct; he takes responsibility in every facet of life where he finds himself, 
-                    which eventually puts him at the forefront and in leadership roles in all his circles of influence. 
-                    He is an intelligent idea creator, innovative-events developer, Manager, and Achor. 
-                    He currently pastors in The Redeemed Christian Church of God, Grace...
+                    He is graced with a leadership instinct; he takes
+                    responsibility in every facet of life where he finds
+                    himself, which eventually puts him at the forefront and in
+                    leadership roles in all his circles of influence. He is an
+                    intelligent idea creator, innovative-events developer,
+                    Manager, and Achor. He currently pastors in The Redeemed
+                    Christian Church of God, Grace...
                   </p>
 
                   <p>
                     His ministry is centered on the Word of God, spiritual
-                    growth, and the transformation of lives through the
-                    message of Christ.
+                    growth, and the transformation of lives through the message
+                    of Christ.
                   </p>
                 </div>
               </Reveal>
@@ -761,13 +766,16 @@ export default function AboutSection() {
           <div className="mt-8 grid auto-rows-[220px] grid-cols-1 gap-4 sm:auto-rows-[240px] sm:grid-cols-2 lg:mt-4 lg:auto-rows-[230px] lg:grid-cols-4">
             {ministryActivities.map((activity, index) => {
               const isLarge = activity.size === "large";
-              const isWide = activity.size === "wide";
 
               return (
                 <Reveal
                   key={activity.id}
                   delay={Math.min(index * 0.05, 0.3)}
-                  className={`${isLarge ? "sm:row-span-2 lg:col-span-2 lg:row-span-2" : ""} ${isWide ? "sm:col-span-2 lg:col-span-2 lg:row-span-1" : ""}`}
+                  className={
+                    isLarge
+                      ? "sm:row-span-2 lg:col-span-2 lg:row-span-2"
+                      : ""
+                  }
                 >
                   <article className="group relative h-full min-h-[220px] overflow-hidden border border-charcoal/10 bg-charcoal-soft shadow-[0_15px_45px_rgba(17,17,15,0.08)]">
                     {/* Image */}
@@ -778,9 +786,7 @@ export default function AboutSection() {
                       sizes={
                         isLarge
                           ? "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 50vw"
-                          : isWide
-                            ? "(max-width: 640px) 100vw, 50vw"
-                            : "(max-width: 640px) 100vw, 50vw"
+                          : "(max-width: 640px) 100vw, 50vw"
                       }
                       className="object-cover transition-transform duration-1000 ease-out group-hover:scale-[1.06]"
                     />
