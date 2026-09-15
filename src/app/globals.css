@@ -317,3 +317,714 @@ img {
 .animate-roll-slow {
   animation: roll-slow 24s linear infinite;
 }
+
+ @keyframes heroGoldGlow {
+          0%,
+          100% {
+            opacity: 0.3;
+            transform: scale(0.92);
+          }
+
+          50% {
+            opacity: 0.45;
+            transform: scale(1);
+          }
+        }
+
+        @keyframes heroBlueGlow {
+          0%,
+          100% {
+            opacity: 0.3;
+            transform: scale(0.94);
+          }
+
+          50% {
+            opacity: 0.48;
+            transform: scale(1.04);
+          }
+        }
+
+        @keyframes heroBlueGlowSecondary {
+          0%,
+          100% {
+            opacity: 0.18;
+            transform: translate3d(0, 0, 0);
+          }
+
+          50% {
+            opacity: 0.28;
+            transform: translate3d(-25px, 20px, 0);
+          }
+        }
+
+        .hero-gold-glow {
+          animation: heroGoldGlow 9s ease-in-out infinite;
+          will-change: transform, opacity;
+        }
+
+        .hero-blue-glow {
+          animation: heroBlueGlow 11s ease-in-out infinite;
+          will-change: transform, opacity;
+        }
+
+        .hero-blue-glow-secondary {
+          animation: heroBlueGlowSecondary 13s ease-in-out infinite;
+          will-change: transform, opacity;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Architectural rings                                             */
+        /* -------------------------------------------------------------- */
+
+        @keyframes heroRingClockwise {
+          from {
+            transform: rotate(0deg);
+          }
+
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes heroRingCounterClockwise {
+          from {
+            transform: rotate(0deg);
+          }
+
+          to {
+            transform: rotate(-360deg);
+          }
+        }
+
+        .hero-ring-one {
+          animation: heroRingClockwise 55s linear infinite;
+          will-change: transform;
+        }
+
+        .hero-ring-two {
+          animation: heroRingCounterClockwise 70s linear infinite;
+          will-change: transform;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Hero entrance                                                    */
+        /* -------------------------------------------------------------- */
+
+        @keyframes heroFadeUp {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 28px, 0);
+          }
+
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes heroLabelIn {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 12px, 0);
+          }
+
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes heroHeadingIn {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 25px, 0);
+          }
+
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes heroDescriptionIn {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 18px, 0);
+          }
+
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes heroActionsIn {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 18px, 0);
+          }
+
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        .hero-copy {
+          animation: heroFadeUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .hero-copy-label {
+          animation: heroLabelIn 0.6s 0.15s cubic-bezier(0.22, 1, 0.36, 1)
+            both;
+        }
+
+        .hero-copy-heading {
+          animation: heroHeadingIn 0.9s 0.22s cubic-bezier(0.22, 1, 0.36, 1)
+            both;
+        }
+
+        .hero-copy-description {
+          animation: heroDescriptionIn 0.7s 0.42s
+            cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .hero-copy-actions {
+          animation: heroActionsIn 0.7s 0.55s
+            cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Heading underline                                                */
+        /* -------------------------------------------------------------- */
+
+        @keyframes heroHeadingLine {
+          from {
+            transform: scaleX(0);
+            transform-origin: left;
+          }
+
+          to {
+            transform: scaleX(1);
+            transform-origin: left;
+          }
+        }
+
+        .hero-heading-line {
+          animation: heroHeadingLine 0.8s 0.85s
+            cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Hero image card                                                  */
+        /* -------------------------------------------------------------- */
+
+        @keyframes heroCardIn {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 45px, 0) scale(0.96);
+          }
+
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0) scale(1);
+          }
+        }
+
+        @keyframes heroCardAura {
+          0%,
+          100% {
+            opacity: 0.28;
+            transform: scale(0.98);
+          }
+
+          50% {
+            opacity: 0.42;
+            transform: scale(1.02);
+          }
+        }
+
+        @keyframes heroBlueLayer {
+          0%,
+          100% {
+            transform: translate3d(0, 0, 0) rotate(0deg);
+          }
+
+          50% {
+            transform: translate3d(0, -8px, 0) rotate(0.4deg);
+          }
+        }
+
+        @keyframes heroGoldLayer {
+          0%,
+          100% {
+            transform: translate3d(0, 0, 0);
+          }
+
+          50% {
+            transform: translate3d(2px, 5px, 0);
+          }
+        }
+
+        .hero-card-wrapper {
+          animation: heroCardIn 1s 0.35s
+            cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .hero-card-aura {
+          animation: heroCardAura 7s ease-in-out infinite;
+          will-change: transform, opacity;
+        }
+
+        .hero-card-blue-layer {
+          animation: heroBlueLayer 7s ease-in-out infinite;
+          will-change: transform;
+        }
+
+        .hero-card-gold-layer {
+          animation: heroGoldLayer 8s ease-in-out infinite;
+          will-change: transform;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Image reflection                                                 */
+        /* -------------------------------------------------------------- */
+
+        .hero-image-reflection {
+          transform: translateX(-120%);
+          transition: transform 1.2s ease-in-out;
+        }
+
+        .group:hover .hero-image-reflection {
+          transform: translateX(120%);
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Floating card label                                              */
+        /* -------------------------------------------------------------- */
+
+        @keyframes heroCardLabelIn {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 10px, 0);
+          }
+
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        .hero-card-label {
+          animation: heroCardLabelIn 0.6s 1s
+            cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Small floating accent                                            */
+        /* -------------------------------------------------------------- */
+
+        @keyframes heroFloatingAccent {
+          0%,
+          100% {
+            opacity: 0.55;
+            transform: translate3d(0, 0, 0);
+          }
+
+          50% {
+            opacity: 0.9;
+            transform: translate3d(0, -12px, 0);
+          }
+        }
+
+        .hero-floating-accent {
+          animation: heroFloatingAccent 4.5s ease-in-out infinite;
+          will-change: transform, opacity;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Scroll indicator                                                 */
+        /* -------------------------------------------------------------- */
+
+        @keyframes heroScrollIndicator {
+          from {
+            opacity: 0;
+          }
+
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes heroScrollLine {
+          0% {
+            transform: translate3d(-100%, 0, 0);
+          }
+
+          50% {
+            transform: translate3d(200%, 0, 0);
+          }
+
+          100% {
+            transform: translate3d(200%, 0, 0);
+          }
+        }
+
+        .hero-scroll-indicator {
+          animation: heroScrollIndicator 0.8s 1.2s ease both;
+        }
+
+        .hero-scroll-line {
+          animation: heroScrollLine 2.8s 1.2s ease-in-out infinite;
+        }
+
+        /* -------------------------------------------------------------- */
+        /* Reduced motion                                                   */
+        /* -------------------------------------------------------------- */
+
+        @media (prefers-reduced-motion: reduce) {
+          .hero-gold-glow,
+          .hero-blue-glow,
+          .hero-blue-glow-secondary,
+          .hero-ring-one,
+          .hero-ring-two,
+          .hero-copy,
+          .hero-copy-label,
+          .hero-copy-heading,
+          .hero-copy-description,
+          .hero-copy-actions,
+          .hero-heading-line,
+          .hero-card-wrapper,
+          .hero-card-aura,
+          .hero-card-blue-layer,
+          .hero-card-gold-layer,
+          .hero-card-label,
+          .hero-floating-accent,
+          .hero-scroll-indicator,
+          .hero-scroll-line {
+            animation: none !important;
+          }
+
+          .hero-copy,
+          .hero-copy-label,
+          .hero-copy-heading,
+          .hero-copy-description,
+          .hero-copy-actions,
+          .hero-heading-line,
+          .hero-card-wrapper,
+          .hero-card-label,
+          .hero-scroll-indicator {
+            opacity: 1;
+            transform: none;
+          }
+
+          .hero-heading-line {
+            transform: scaleX(1);
+          }
+
+          .hero-image-reflection {
+            display: none;
+          }
+        }
+ 
+/* ==========================================================================
+   ABOUT SECTION — PERFORMANCE-FRIENDLY MOTION
+   ========================================================================== */
+
+@keyframes aboutReveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.about-reveal {
+  opacity: 0;
+  animation: aboutReveal 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0ms;
+}
+
+.about-delay-80 {
+  animation-delay: 80ms;
+}
+
+.about-delay-120 {
+  animation-delay: 120ms;
+}
+
+.about-delay-140 {
+  animation-delay: 140ms;
+}
+
+.about-delay-160 {
+  animation-delay: 160ms;
+}
+
+.about-delay-180 {
+  animation-delay: 180ms;
+}
+
+.about-delay-220 {
+  animation-delay: 220ms;
+}
+
+.about-delay-240 {
+  animation-delay: 240ms;
+}
+
+.about-delay-250 {
+  animation-delay: 250ms;
+}
+
+.about-delay-300 {
+  animation-delay: 300ms;
+}
+
+.about-delay-360 {
+  animation-delay: 360ms;
+}
+
+.about-delay-420 {
+  animation-delay: 420ms;
+}
+
+/* Gallery items use a very small entrance animation rather than
+   JavaScript-driven viewport observers. */
+
+@keyframes aboutGalleryReveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.about-gallery-item {
+  opacity: 0;
+  animation: aboutGalleryReveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--about-delay, 0ms);
+}
+
+/* ==========================================================================
+   MINISTRY MOTION VISUAL
+   ========================================================================== */
+
+@keyframes subjectFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -5px, 0);
+  }
+}
+
+.motion-subject-float {
+  animation: subjectFloat 7s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes motionGhostOne {
+  0%,
+  100% {
+    transform: translate3d(-27px, 0, 0);
+    opacity: 0.1;
+  }
+
+  50% {
+    transform: translate3d(-43px, -2px, 0);
+    opacity: 0.055;
+  }
+}
+
+.motion-ghost-one {
+  animation: motionGhostOne 5s ease-in-out infinite 350ms;
+  will-change: transform, opacity;
+}
+
+@keyframes motionGhostTwo {
+  0%,
+  100% {
+    transform: translate3d(-48px, 0, 0);
+    opacity: 0.075;
+  }
+
+  50% {
+    transform: translate3d(-68px, -3px, 0);
+    opacity: 0.035;
+  }
+}
+
+.motion-ghost-two {
+  animation: motionGhostTwo 6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes motionColorEcho {
+  0%,
+  100% {
+    transform: translate3d(17px, 0, 0);
+    opacity: 0.045;
+  }
+
+  50% {
+    transform: translate3d(32px, -2px, 0);
+    opacity: 0.02;
+  }
+}
+
+.motion-color-echo {
+  animation: motionColorEcho 7s ease-in-out infinite 600ms;
+  will-change: transform, opacity;
+}
+
+@keyframes motionTrail {
+  0%,
+  100% {
+    transform: scaleX(0.78);
+    opacity: 0.25;
+  }
+
+  50% {
+    transform: scaleX(1);
+    opacity: 0.65;
+  }
+}
+
+.motion-trail {
+  animation: motionTrail 5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.motion-trail-medium {
+  animation-duration: 6s;
+}
+
+.motion-trail-gold {
+  animation-duration: 5.5s;
+}
+
+@keyframes motionWash {
+  0%,
+  100% {
+    transform: translateX(-12px) rotate(-3deg);
+    opacity: 0.35;
+  }
+
+  50% {
+    transform: translateX(18px) rotate(-3deg);
+    opacity: 0.7;
+  }
+}
+
+.motion-wash {
+  animation: motionWash 7s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes motionParticle {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.2;
+  }
+
+  50% {
+    transform: translate3d(12px, -6px, 0);
+    opacity: 0.75;
+  }
+}
+
+.motion-particle {
+  animation: motionParticle 4s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.motion-particle-slow {
+  animation-duration: 5s;
+}
+
+.motion-particle-slower {
+  animation-duration: 5.5s;
+}
+
+@keyframes motionDash {
+  0%,
+  100% {
+    transform: translateX(-8px);
+    opacity: 0.15;
+  }
+
+  50% {
+    transform: translateX(12px);
+    opacity: 0.65;
+  }
+}
+
+.motion-dash {
+  animation: motionDash 5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.motion-dash-slow {
+  animation-duration: 5.5s;
+}
+
+.motion-dash-fast {
+  animation-duration: 4s;
+}
+
+/* Animation delays */
+
+.motion-delay-500 {
+  animation-delay: 500ms;
+}
+
+.motion-delay-800 {
+  animation-delay: 800ms;
+}
+
+.motion-delay-900 {
+  animation-delay: 900ms;
+}
+
+.motion-delay-1200 {
+  animation-delay: 1200ms;
+}
+
+.motion-delay-1400 {
+  animation-delay: 1400ms;
+}
+
+.motion-delay-1700 {
+  animation-delay: 1700ms;
+}
+
+/* Reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .about-reveal,
+  .about-gallery-item,
+  .motion-subject-float,
+  .motion-ghost-one,
+  .motion-ghost-two,
+  .motion-color-echo,
+  .motion-trail,
+  .motion-wash,
+  .motion-particle,
+  .motion-dash {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

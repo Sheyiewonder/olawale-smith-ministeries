@@ -1,5 +1,3 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -11,7 +9,7 @@ import {
   Users,
 } from "lucide-react";
 
-import Reveal from "@/components/motion/Reveal";
+import type { CSSProperties } from "react";
 
 /* -------------------------------------------------------------------------- */
 /* Image Data                                                                 */
@@ -152,26 +150,12 @@ const ministryFocus = [
 /* Ministry Motion Visual                                                     */
 /* -------------------------------------------------------------------------- */
 
-/*
- * Photographic motion-study:
- *
- * - The main PNG remains the dominant subject.
- * - Multiple low-opacity copies create a directional photographic echo.
- * - The echoes move horizontally behind the subject.
- * - Blue and gold directional trails reinforce movement.
- * - Small dashes and particles provide subtle kinetic detail.
- * - No rings, spheres, flames, orbital paths, or foreground geometry.
- */
-
 function MinistryMotionVisual() {
   const subject = "/images/pastor olawale smith 038.png";
 
   return (
     <div className="relative flex min-h-[520px] w-full select-none items-center justify-center overflow-visible sm:min-h-[600px] lg:min-h-[640px]">
-      {/* ------------------------------------------------------------------ */}
-      {/* Ambient atmosphere                                                  */}
-      {/* ------------------------------------------------------------------ */}
-
+      {/* Ambient atmosphere */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute left-[48%] top-[48%] z-0 h-[320px] w-[320px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-soft/[0.09] blur-[110px] sm:h-[400px] sm:w-[400px] lg:h-[460px] lg:w-[460px]"
@@ -182,55 +166,42 @@ function MinistryMotionVisual() {
         className="pointer-events-none absolute left-[43%] top-[58%] z-0 h-[190px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gold/[0.055] blur-[100px]"
       />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Directional motion field                                            */}
-      {/* ------------------------------------------------------------------ */}
-
+      {/* Directional motion field */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-5 overflow-visible"
       >
-        {/* Long blue motion trail */}
-        <div className="absolute left-[4%] top-[39%] h-px w-[62%] origin-left bg-gradient-to-r from-transparent via-blue-soft/10 to-blue-soft/45 blur-[0.5px] animate-[motionTrail_5s_ease-in-out_infinite]" />
+        <div className="absolute left-[4%] top-[39%] h-px w-[62%] origin-left bg-gradient-to-r from-transparent via-blue-soft/10 to-blue-soft/45 blur-[0.5px] motion-trail motion-trail-slow" />
 
-        {/* Second blue trail */}
-        <div className="absolute left-[12%] top-[45%] h-px w-[48%] origin-left bg-gradient-to-r from-transparent via-blue/10 to-blue-soft/30 animate-[motionTrail_6s_ease-in-out_infinite_0.8s]" />
+        <div className="absolute left-[12%] top-[45%] h-px w-[48%] origin-left bg-gradient-to-r from-transparent via-blue/10 to-blue-soft/30 motion-trail motion-trail-medium motion-delay-800" />
 
-        {/* Gold trail */}
-        <div className="absolute left-[24%] top-[66%] h-px w-[42%] origin-left bg-gradient-to-r from-transparent via-gold/10 to-gold/35 animate-[motionTrail_5.5s_ease-in-out_infinite_1.2s]" />
+        <div className="absolute left-[24%] top-[66%] h-px w-[42%] origin-left bg-gradient-to-r from-transparent via-gold/10 to-gold/35 motion-trail motion-trail-gold motion-delay-1200" />
 
-        {/* Soft broad directional wash */}
-        <div className="absolute left-[2%] top-[34%] h-[120px] w-[58%] -rotate-3 bg-gradient-to-r from-blue-soft/[0.025] via-blue-soft/[0.045] to-transparent blur-2xl animate-[motionWash_7s_ease-in-out_infinite]" />
+        <div className="absolute left-[2%] top-[34%] h-[120px] w-[58%] -rotate-3 bg-gradient-to-r from-blue-soft/[0.025] via-blue-soft/[0.045] to-transparent blur-2xl motion-wash" />
 
-        {/* Small motion dashes */}
-        <span className="absolute left-[13%] top-[30%] h-px w-12 bg-blue-soft/35 animate-[motionDash_4.5s_ease-in-out_infinite]" />
+        <span className="absolute left-[13%] top-[30%] h-px w-12 bg-blue-soft/35 motion-dash" />
 
-        <span className="absolute left-[8%] top-[57%] h-px w-7 bg-blue/30 animate-[motionDash_5.5s_ease-in-out_infinite_0.9s]" />
+        <span className="absolute left-[8%] top-[57%] h-px w-7 bg-blue/30 motion-dash motion-dash-slow motion-delay-900" />
 
-        <span className="absolute right-[11%] top-[34%] h-px w-10 bg-gold/35 animate-[motionDash_5s_ease-in-out_infinite_1.4s]" />
+        <span className="absolute right-[11%] top-[34%] h-px w-10 bg-gold/35 motion-dash motion-delay-1400" />
 
-        <span className="absolute right-[8%] top-[61%] h-px w-6 bg-blue-soft/30 animate-[motionDash_4s_ease-in-out_infinite_0.5s]" />
+        <span className="absolute right-[8%] top-[61%] h-px w-6 bg-blue-soft/30 motion-dash motion-dash-fast motion-delay-500" />
 
-        {/* Tiny motion particles */}
-        <span className="absolute left-[22%] top-[25%] h-1 w-1 rounded-full bg-blue-soft/45 shadow-[0_0_10px_rgba(111,168,230,0.35)] animate-[motionParticle_4s_ease-in-out_infinite]" />
+        <span className="absolute left-[22%] top-[25%] h-1 w-1 rounded-full bg-blue-soft/45 shadow-[0_0_10px_rgba(111,168,230,0.35)] motion-particle" />
 
-        <span className="absolute left-[17%] top-[69%] h-1 w-1 rounded-full bg-gold-light/45 shadow-[0_0_10px_rgba(201,180,125,0.3)] animate-[motionParticle_5s_ease-in-out_infinite_0.8s]" />
+        <span className="absolute left-[17%] top-[69%] h-1 w-1 rounded-full bg-gold-light/45 shadow-[0_0_10px_rgba(201,180,125,0.3)] motion-particle motion-particle-slow motion-delay-800" />
 
-        <span className="absolute right-[19%] top-[22%] h-1 w-1 rounded-full bg-blue-soft/35 animate-[motionParticle_4.5s_ease-in-out_infinite_1.2s]" />
+        <span className="absolute right-[19%] top-[22%] h-1 w-1 rounded-full bg-blue-soft/35 motion-particle motion-delay-1200" />
 
-        <span className="absolute bottom-[23%] right-[15%] h-1 w-1 rounded-full bg-gold/40 animate-[motionParticle_5.5s_ease-in-out_infinite_1.7s]" />
+        <span className="absolute bottom-[23%] right-[15%] h-1 w-1 rounded-full bg-gold/40 motion-particle motion-particle-slower motion-delay-1700" />
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Photographic afterimages                                            */}
-      {/* ------------------------------------------------------------------ */}
-
+      {/* Photographic afterimages */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
       >
-        {/* Furthest photographic echo */}
-        <div className="absolute w-[230px] -translate-x-[48px] opacity-[0.075] blur-[1.5px] mix-blend-multiply sm:w-[285px] lg:w-[330px] xl:w-[350px] animate-[motionGhostTwo_6s_ease-in-out_infinite]">
+        <div className="absolute w-[230px] -translate-x-[48px] opacity-[0.075] blur-[1.5px] mix-blend-multiply sm:w-[285px] lg:w-[330px] xl:w-[350px] motion-ghost-two">
           <Image
             src={subject}
             alt=""
@@ -241,8 +212,7 @@ function MinistryMotionVisual() {
           />
         </div>
 
-        {/* Middle photographic echo */}
-        <div className="absolute w-[245px] -translate-x-[27px] opacity-[0.10] blur-[0.8px] mix-blend-multiply sm:w-[300px] lg:w-[345px] xl:w-[365px] animate-[motionGhostOne_5s_ease-in-out_infinite_0.35s]">
+        <div className="absolute w-[245px] -translate-x-[27px] opacity-[0.10] blur-[0.8px] mix-blend-multiply sm:w-[300px] lg:w-[345px] xl:w-[365px] motion-ghost-one">
           <Image
             src={subject}
             alt=""
@@ -253,8 +223,7 @@ function MinistryMotionVisual() {
           />
         </div>
 
-        {/* Subtle blue photographic color echo */}
-        <div className="absolute w-[250px] translate-x-[17px] opacity-[0.045] blur-[3px] mix-blend-screen sm:w-[305px] lg:w-[350px] xl:w-[370px] animate-[motionColorEcho_7s_ease-in-out_infinite_0.6s]">
+        <div className="absolute w-[250px] translate-x-[17px] opacity-[0.045] blur-[3px] mix-blend-screen sm:w-[305px] lg:w-[350px] xl:w-[370px] motion-color-echo">
           <Image
             src={subject}
             alt=""
@@ -266,11 +235,8 @@ function MinistryMotionVisual() {
         </div>
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Main subject                                                        */}
-      {/* ------------------------------------------------------------------ */}
-
-      <div className="relative z-20 w-[260px] animate-[subjectFloat_7s_ease-in-out_infinite] sm:w-[320px] lg:w-[370px] xl:w-[390px]">
+      {/* Main subject */}
+      <div className="relative z-20 w-[260px] motion-subject-float sm:w-[320px] lg:w-[370px] xl:w-[390px]">
         <Image
           src={subject}
           alt="Pastor Olawale Smith"
@@ -280,17 +246,13 @@ function MinistryMotionVisual() {
           className="h-auto w-full object-contain drop-shadow-[0_25px_35px_rgba(17,17,15,0.20)]"
         />
 
-        {/* Very subtle subject-side light */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -right-4 top-[22%] h-[34%] w-10 rounded-full bg-blue-soft/[0.08] blur-2xl"
         />
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Editorial marker                                                    */}
-      {/* ------------------------------------------------------------------ */}
-
+      {/* Editorial marker */}
       <div className="absolute bottom-4 right-2 z-30 hidden items-center gap-3 sm:flex lg:right-0">
         <span className="h-px w-8 bg-blue-soft/40" />
 
@@ -298,122 +260,6 @@ function MinistryMotionVisual() {
           The work continues
         </span>
       </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Motion-study animation keyframes                                   */}
-      {/* ------------------------------------------------------------------ */}
-
-      <style jsx>{`
-        @keyframes subjectFloat {
-          0%,
-          100% {
-            transform: translate3d(0, 0, 0);
-          }
-
-          50% {
-            transform: translate3d(0, -5px, 0);
-          }
-        }
-
-        @keyframes motionGhostOne {
-          0%,
-          100% {
-            transform: translate3d(-27px, 0, 0);
-            opacity: 0.1;
-          }
-
-          50% {
-            transform: translate3d(-43px, -2px, 0);
-            opacity: 0.055;
-          }
-        }
-
-        @keyframes motionGhostTwo {
-          0%,
-          100% {
-            transform: translate3d(-48px, 0, 0);
-            opacity: 0.075;
-          }
-
-          50% {
-            transform: translate3d(-68px, -3px, 0);
-            opacity: 0.035;
-          }
-        }
-
-        @keyframes motionColorEcho {
-          0%,
-          100% {
-            transform: translate3d(17px, 0, 0);
-            opacity: 0.045;
-          }
-
-          50% {
-            transform: translate3d(32px, -2px, 0);
-            opacity: 0.02;
-          }
-        }
-
-        @keyframes motionTrail {
-          0%,
-          100% {
-            transform: scaleX(0.78);
-            opacity: 0.25;
-          }
-
-          50% {
-            transform: scaleX(1);
-            opacity: 0.65;
-          }
-        }
-
-        @keyframes motionWash {
-          0%,
-          100% {
-            transform: translateX(-12px) rotate(-3deg);
-            opacity: 0.35;
-          }
-
-          50% {
-            transform: translateX(18px) rotate(-3deg);
-            opacity: 0.7;
-          }
-        }
-
-        @keyframes motionParticle {
-          0%,
-          100% {
-            transform: translate3d(0, 0, 0);
-            opacity: 0.2;
-          }
-
-          50% {
-            transform: translate3d(12px, -6px, 0);
-            opacity: 0.75;
-          }
-        }
-
-        @keyframes motionDash {
-          0%,
-          100% {
-            transform: translateX(-8px);
-            opacity: 0.15;
-          }
-
-          50% {
-            transform: translateX(12px);
-            opacity: 0.65;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          :global(*) {
-            animation-duration: 0.01ms !important;
-            animation-iteration-count: 1 !important;
-            transition-duration: 0.01ms !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
@@ -428,25 +274,19 @@ export default function AboutSection() {
       id="about"
       className="relative overflow-hidden bg-ivory text-charcoal"
     >
-      {/* ------------------------------------------------------------------ */}
-      {/* Atmospheric Background                                             */}
-      {/* ------------------------------------------------------------------ */}
-
+      {/* Atmospheric Background */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 overflow-hidden"
       >
-        {/* Blue atmospheric glow */}
         <div className="absolute left-[-15%] top-[8%] h-[560px] w-[560px] rounded-full bg-blue-soft/[0.10] blur-[150px]" />
 
         <div className="absolute right-[-15%] top-[32%] h-[620px] w-[620px] rounded-full bg-blue/[0.075] blur-[160px]" />
 
-        {/* Gold atmosphere */}
         <div className="absolute left-[38%] top-[20%] h-[320px] w-[320px] rounded-full bg-gold/[0.08] blur-[130px]" />
 
         <div className="absolute bottom-[-10%] right-[20%] h-[460px] w-[460px] rounded-full bg-bronze/[0.07] blur-[140px]" />
 
-        {/* Architectural rings */}
         <div className="absolute -left-64 top-[10%] h-[620px] w-[620px] rounded-full border border-blue-soft/[0.13]" />
 
         <div className="absolute -left-40 top-[16%] h-[470px] w-[470px] rounded-full border border-gold/[0.12]" />
@@ -455,14 +295,12 @@ export default function AboutSection() {
 
         <div className="absolute -right-52 bottom-[12%] h-[520px] w-[520px] rounded-full border border-gold/[0.10]" />
 
-        {/* Fine horizontal lines */}
         <div className="absolute left-0 top-[18%] h-px w-[26%] bg-gradient-to-r from-transparent via-blue-soft/35 to-transparent" />
 
         <div className="absolute right-0 top-[58%] h-px w-[22%] bg-gradient-to-l from-transparent via-gold/30 to-transparent" />
 
         <div className="absolute bottom-[14%] left-0 h-px w-[18%] bg-gradient-to-r from-transparent via-blue-soft/25 to-transparent" />
 
-        {/* Overall wash */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,208,0.055),transparent_30%),radial-gradient(circle_at_75%_65%,rgba(183,154,91,0.045),transparent_32%)]" />
       </div>
 
@@ -472,9 +310,8 @@ export default function AboutSection() {
         {/* ================================================================== */}
 
         <div className="mx-auto max-w-7xl px-6 py-24 sm:px-8 sm:py-28 lg:px-12 lg:py-36">
-          {/* Section heading */}
           <div className="grid gap-12 lg:grid-cols-[0.75fr_1.25fr] lg:items-end">
-            <Reveal>
+            <div className="about-reveal">
               <div className="flex items-center gap-4">
                 <span className="h-px w-12 bg-bronze" />
 
@@ -482,43 +319,37 @@ export default function AboutSection() {
                   About the Man of God
                 </p>
               </div>
-            </Reveal>
+            </div>
 
-            <Reveal delay={0.08}>
-              <div className="lg:ml-auto lg:max-w-3xl">
-                <h2 className="display-heading text-5xl leading-[0.94] tracking-[-0.045em] text-blue-deep sm:text-6xl lg:text-[5.8rem]">
-                  A life given
-                  <br />
-                  <span className="relative inline-block text-bronze">
-                    to the work.
-                    <span
-                      aria-hidden="true"
-                      className="absolute -bottom-2 left-0 h-px w-2/3 bg-gradient-to-r from-bronze via-blue-soft to-transparent opacity-70"
-                    />
-                  </span>
-                </h2>
-              </div>
-            </Reveal>
+            <div className="about-reveal about-delay-80 lg:ml-auto lg:max-w-3xl">
+              <h2 className="display-heading text-5xl leading-[0.94] tracking-[-0.045em] text-blue-deep sm:text-6xl lg:text-[5.8rem]">
+                A life given
+                <br />
+                <span className="relative inline-block text-bronze">
+                  to the work.
+                  <span
+                    aria-hidden="true"
+                    className="absolute -bottom-2 left-0 h-px w-2/3 bg-gradient-to-r from-bronze via-blue-soft to-transparent opacity-70"
+                  />
+                </span>
+              </h2>
+            </div>
           </div>
 
-          {/* Profile layout */}
           <div className="mt-20 grid gap-14 lg:grid-cols-[1.05fr_0.95fr] lg:gap-20 xl:gap-28">
             {/* Photography */}
-            <Reveal delay={0.12}>
+            <div className="about-reveal about-delay-120">
               <div className="relative">
-                {/* Blue architectural layer */}
                 <div
                   aria-hidden="true"
                   className="absolute -left-5 top-7 h-[72%] w-[82%] border border-blue-soft/[0.20] bg-blue-soft/[0.045]"
                 />
 
-                {/* Gold offset frame */}
                 <div
                   aria-hidden="true"
                   className="absolute -bottom-5 -right-5 h-[68%] w-[72%] border border-gold/[0.24]"
                 />
 
-                {/* Main image */}
                 <div className="relative z-10 aspect-[4/5] overflow-hidden border border-blue-soft/60 bg-charcoal-soft shadow-[0_30px_80px_rgba(17,17,15,0.12)]">
                   <Image
                     src={profileImages.main}
@@ -529,12 +360,10 @@ export default function AboutSection() {
                     className="object-cover transition-transform duration-1000 hover:scale-[1.035]"
                   />
 
-                  {/* Image treatment */}
                   <div className="absolute inset-0 bg-gradient-to-t from-charcoal/70 via-transparent to-blue-deep/[0.12]" />
 
                   <div className="absolute inset-0 border border-white/[0.10]" />
 
-                  {/* Image label */}
                   <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between">
                     <div>
                       <p className="text-[9px] font-bold uppercase tracking-[0.28em] text-gold-light">
@@ -556,7 +385,6 @@ export default function AboutSection() {
                   </div>
                 </div>
 
-                {/* Supporting images */}
                 <div className="absolute -bottom-10 -left-4 z-20 hidden w-[30%] max-w-[170px] sm:block">
                   <div className="relative aspect-[3/4] overflow-hidden border border-blue-soft/40 bg-white shadow-2xl">
                     <Image
@@ -568,6 +396,7 @@ export default function AboutSection() {
                     />
 
                     <div className="absolute inset-0 bg-gradient-to-t from-charcoal/50 to-transparent" />
+
                     <div className="absolute inset-0 border border-white/[0.10]" />
                   </div>
                 </div>
@@ -583,11 +412,11 @@ export default function AboutSection() {
                     />
 
                     <div className="absolute inset-0 bg-gradient-to-t from-charcoal/50 to-transparent" />
+
                     <div className="absolute inset-0 border border-white/[0.10]" />
                   </div>
                 </div>
 
-                {/* Floating index */}
                 <div className="absolute -right-2 bottom-10 z-30 flex h-16 w-16 items-center justify-center border border-blue-soft/25 bg-ivory/[0.82] shadow-xl backdrop-blur-xl sm:-right-8">
                   <div className="text-center">
                     <span className="block text-[8px] font-bold uppercase tracking-[0.2em] text-blue-deep">
@@ -600,23 +429,23 @@ export default function AboutSection() {
                   </div>
                 </div>
               </div>
-            </Reveal>
+            </div>
 
             {/* Profile Content */}
             <div className="flex flex-col justify-center lg:pt-8">
-              <Reveal delay={0.18}>
+              <div className="about-reveal about-delay-180">
                 <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-blue-deep">
                   Meet The Man of God
                 </p>
-              </Reveal>
+              </div>
 
-              <Reveal delay={0.24}>
+              <div className="about-reveal about-delay-240">
                 <h3 className="mt-5 max-w-2xl text-3xl font-medium leading-[1.05] tracking-[-0.025em] text-charcoal sm:text-4xl">
                   Pastor Olawale Smith
                 </h3>
-              </Reveal>
+              </div>
 
-              <Reveal delay={0.3}>
+              <div className="about-reveal about-delay-300">
                 <div className="mt-7 max-w-2xl space-y-5 text-sm leading-8 text-charcoal/55 sm:text-base">
                   <p>
                     Pastor Olawale Smith is a born-again child of God, burning
@@ -638,10 +467,9 @@ export default function AboutSection() {
                     Christian Church of God, Grace...
                   </p>
                 </div>
-              </Reveal>
+              </div>
 
-              {/* Focus items */}
-              <Reveal delay={0.36}>
+              <div className="about-reveal about-delay-360">
                 <div className="mt-10 grid grid-cols-2 border-y border-charcoal/10 sm:grid-cols-4">
                   {ministryFocus.map((item, index) => {
                     const Icon = item.icon;
@@ -668,10 +496,9 @@ export default function AboutSection() {
                     );
                   })}
                 </div>
-              </Reveal>
+              </div>
 
-              {/* CTA */}
-              <Reveal delay={0.42}>
+              <div className="about-reveal about-delay-420">
                 <div className="mt-9">
                   <Link
                     href="/about"
@@ -686,7 +513,7 @@ export default function AboutSection() {
                     />
                   </Link>
                 </div>
-              </Reveal>
+              </div>
             </div>
           </div>
         </div>
@@ -701,11 +528,10 @@ export default function AboutSection() {
         {/* ================================================================== */}
 
         <div className="mx-auto max-w-7xl px-6 py-24 sm:px-8 sm:py-28 lg:px-12 lg:py-36">
-          {/* Ministry Activities Intro */}
           <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-2 xl:grid-cols-[0.88fr_1.12fr]">
             {/* LEFT — TEXT */}
             <div className="relative z-40 max-w-2xl">
-              <Reveal>
+              <div className="about-reveal">
                 <div className="flex items-center gap-4">
                   <span className="h-px w-12 bg-blue-soft" />
 
@@ -713,9 +539,9 @@ export default function AboutSection() {
                     Ministry Activities
                   </p>
                 </div>
-              </Reveal>
+              </div>
 
-              <Reveal delay={0.08}>
+              <div className="about-reveal about-delay-80">
                 <h2 className="display-heading mt-7 text-left text-5xl leading-[0.94] tracking-[-0.045em] text-charcoal sm:text-6xl lg:text-[5.4rem] xl:text-[5.8rem]">
                   A ministry
                   <br />
@@ -727,26 +553,26 @@ export default function AboutSection() {
                     />
                   </span>
                 </h2>
-              </Reveal>
+              </div>
 
-              <Reveal delay={0.16}>
+              <div className="about-reveal about-delay-160">
                 <p className="mt-7 max-w-xl text-left text-sm leading-8 text-charcoal/45 sm:text-base sm:leading-8">
                   A glimpse into the gatherings, teachings, conferences,
                   worship moments, outreach, and people that form part of the
                   ministry&apos;s ongoing work.
                 </p>
-              </Reveal>
+              </div>
             </div>
 
             {/* RIGHT — ANIMATED VISUAL */}
-            <Reveal delay={0.14}>
+            <div className="about-reveal about-delay-140">
               <div className="relative lg:-mr-14 xl:-mr-22">
                 <MinistryMotionVisual />
               </div>
-            </Reveal>
+            </div>
           </div>
 
-          <Reveal delay={0.22}>
+          <div className="about-reveal about-delay-220">
             <div className="mt-8 flex items-center gap-4">
               <span className="h-px w-10 bg-gold/50" />
 
@@ -754,7 +580,7 @@ export default function AboutSection() {
                 Selected moments
               </span>
             </div>
-          </Reveal>
+          </div>
 
           {/* Gallery */}
           <div className="mt-8 grid auto-rows-[220px] grid-cols-1 gap-4 sm:auto-rows-[240px] sm:grid-cols-2 lg:mt-4 lg:auto-rows-[230px] lg:grid-cols-4">
@@ -762,17 +588,20 @@ export default function AboutSection() {
               const isLarge = activity.size === "large";
 
               return (
-                <Reveal
+                <div
                   key={activity.id}
-                  delay={Math.min(index * 0.05, 0.3)}
-                  className={
+                  className={`about-gallery-item ${
                     isLarge
                       ? "sm:row-span-2 lg:col-span-2 lg:row-span-2"
                       : ""
+                  }`}
+                  style={
+                    {
+                      "--about-delay": `${Math.min(index * 50, 300)}ms`,
+                    } as React.CSSProperties
                   }
                 >
                   <article className="group relative h-full min-h-[220px] overflow-hidden border border-charcoal/10 bg-charcoal-soft shadow-[0_15px_45px_rgba(17,17,15,0.08)]">
-                    {/* Image */}
                     <Image
                       src={activity.src}
                       alt={activity.alt}
@@ -785,16 +614,12 @@ export default function AboutSection() {
                       className="object-cover transition-transform duration-1000 ease-out group-hover:scale-[1.06]"
                     />
 
-                    {/* Image color treatment */}
                     <div className="absolute inset-0 bg-gradient-to-t from-charcoal via-charcoal/10 to-transparent opacity-80 transition-opacity duration-500 group-hover:opacity-95" />
 
-                    {/* Cool blue atmospheric overlay */}
                     <div className="absolute inset-0 bg-blue-deep/[0.08] mix-blend-screen transition-opacity duration-500 group-hover:bg-blue/[0.14]" />
 
-                    {/* Border */}
                     <div className="absolute inset-0 border border-white/[0.10] transition-colors duration-500 group-hover:border-blue-soft/30" />
 
-                    {/* Top metadata */}
                     <div className="absolute left-4 right-4 top-4 flex items-start justify-between">
                       <span className="inline-flex items-center border border-white/15 bg-charcoal/50 px-3 py-2 text-[8px] font-bold uppercase tracking-[0.2em] text-ivory backdrop-blur-md">
                         {activity.tag}
@@ -805,7 +630,6 @@ export default function AboutSection() {
                       </span>
                     </div>
 
-                    {/* Bottom information */}
                     <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-6">
                       <div className="translate-y-2 transition-transform duration-500 group-hover:translate-y-0">
                         <div className="flex items-center gap-2 text-[8px] uppercase tracking-[0.18em] text-blue-soft">
@@ -832,20 +656,19 @@ export default function AboutSection() {
                       </div>
                     </div>
 
-                    {/* Hover glow */}
                     <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-700 group-hover:opacity-100">
                       <div className="absolute -right-20 -top-20 h-48 w-48 rounded-full bg-blue-soft/10 blur-3xl" />
 
                       <div className="absolute -bottom-20 -left-20 h-48 w-48 rounded-full bg-gold/10 blur-3xl" />
                     </div>
                   </article>
-                </Reveal>
+                </div>
               );
             })}
           </div>
 
           {/* Gallery footer */}
-          <Reveal delay={0.25}>
+          <div className="about-reveal about-delay-250">
             <div className="mt-12 flex flex-col gap-6 border-t border-charcoal/10 pt-7 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <span className="h-px w-10 bg-gold/50" />
@@ -868,7 +691,7 @@ export default function AboutSection() {
                 />
               </Link>
             </div>
-          </Reveal>
+          </div>
         </div>
       </div>
     </section>
