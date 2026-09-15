@@ -14,6 +14,7 @@ import {
 
 import PageLayout from "@/components/layout/PageLayout";
 
+import Section from "@/components/layout/Section";
 /* -------------------------------------------------------------------------- */
 /* Data                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -556,7 +557,7 @@ export default function AboutPage() {
                   <span className="text-bronze">serve</span>
                 </h2>
 
-                <p className="mt-9 text-base leading-8 text-charcoal/70 sm:text-lg">
+                <p className="text-justify mt-9 text-base leading-8 text-charcoal/70 sm:text-lg">
                   Pastor Olawale Smith is a born-again child
                   of God, burning with a special passion to
                   reach the world for Christ. He is a preacher,
@@ -568,7 +569,7 @@ export default function AboutPage() {
                   Spirit to the glory of GOD ALMIGHTY.
                 </p>
 
-                <p className="mt-7 text-base leading-8 text-charcoal/70 sm:text-lg">
+                <p className="text-justify mt-7 text-base leading-8 text-charcoal/70 sm:text-lg">
                   He is graced with a leadership instinct; he
                   takes responsibility in every facet of life
                   where he finds himself, which eventually
@@ -582,7 +583,7 @@ export default function AboutPage() {
                   Fashion Stylist, and a Fashion Retailer.
                 </p>
 
-                <p className="mt-7 text-base leading-8 text-charcoal/70 sm:text-lg">
+                <p className="text-justify mt-7 text-base leading-8 text-charcoal/70 sm:text-lg">
                   He is a graduate of computer science from the
                   Lagos State University of Science and Technology
                   (LASUSTECH). He is currently the Pastor in charge
@@ -601,7 +602,7 @@ export default function AboutPage() {
         {/* Calling                                                             */}
         {/* ------------------------------------------------------------------ */}
 
-        <section className="relative overflow-hidden bg-charcoal text-ivory">
+        <Section theme="dark" className="relative overflow-hidden bg-charcoal text-ivory">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute left-[-15%] top-[10%] h-[500px] w-[500px] rounded-full bg-blue/[0.08] blur-[150px]" />
 
@@ -675,13 +676,13 @@ export default function AboutPage() {
               </div>
             </div>
           </div>
-        </section>
+        </Section>
 
         {/* ------------------------------------------------------------------ */}
         {/* Ministry Focus                                                      */}
         {/* ------------------------------------------------------------------ */}
 
-        <section className="relative overflow-hidden bg-ivory">
+        <Section theme="light" className="relative overflow-hidden bg-ivory">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute right-[-10%] top-[15%] h-[420px] w-[420px] rounded-full bg-blue-soft/[0.07] blur-[140px]" />
 
@@ -698,7 +699,7 @@ export default function AboutPage() {
                 <span className="text-bronze">is built around.</span>
               </h2>
 
-              <p className="mt-7 max-w-2xl text-base leading-8 text-charcoal/60 sm:text-lg">
+              <p className="text-justify mt-7 max-w-2xl text-base leading-8 text-charcoal/60 sm:text-lg">
                 Four simple expressions capture the heart
                 of the ministry and the kind of impact it
                 desires to leave in people.
@@ -730,7 +731,7 @@ export default function AboutPage() {
                       {item.title}
                     </h3>
 
-                    <p className="mt-4 text-sm leading-7 text-charcoal/60">
+                    <p className="text-justify mt-4 text-sm leading-7 text-charcoal/60">
                       {item.text}
                     </p>
                   </div>
@@ -738,13 +739,13 @@ export default function AboutPage() {
               })}
             </div>
           </div>
-        </section>
+        </Section>
 
         {/* ------------------------------------------------------------------ */}
         {/* Ministry In Motion                                                 */}
         {/* ------------------------------------------------------------------ */}
 
-        <section className="relative overflow-hidden bg-ivory">
+        <Section theme="light" className="relative overflow-hidden bg-ivory">
           <div className="relative mx-auto w-full max-w-7xl px-4 py-20 sm:py-24 lg:px-8 lg:py-40">
             <div className="grid items-center gap-12 lg:grid-cols-[1fr_1fr] lg:gap-20">
               <div className="order-2 lg:order-1">
@@ -753,24 +754,24 @@ export default function AboutPage() {
                 </p>
 
                 <h2 className="display-heading mt-5 text-4xl text-charcoal sm:text-5xl lg:text-7xl">
-                  A ministry
+                  A man
                   <br />
                   <span className="text-blue">in motion.</span>
                 </h2>
 
-                <p className="mt-7 max-w-xl text-base leading-8 text-charcoal/60 sm:text-lg">
+                <p className="mt-7 text-justify max-w-xl text-base leading-8 text-charcoal/60 sm:text-lg">
                   A glimpse into the gatherings, teachings,
                   conferences, worship moments, outreach, and
                   people that form part of the ministry&apos;s
                   ongoing work.
                 </p>
 
-                <div className="mt-10 border-l border-blue/25 pl-6">
-                  <p className="text-sm leading-7 text-charcoal/55">
+                {/* <div className="mt-10 border-l border-blue/25 pl-6">
+                  <p className="text-justify text-sm leading-7 text-charcoal/55">
                     The work continues wherever people gather,
                     learn, worship, serve, pray, and grow.
                   </p>
-                </div>
+                </div> */}
               </div>
 
               <div className="order-1 lg:order-2">
@@ -778,13 +779,13 @@ export default function AboutPage() {
               </div>
             </div>
           </div>
-        </section>
+        </Section>
 
         {/* ------------------------------------------------------------------ */}
         {/* Selected Moments                                                   */}
         {/* ------------------------------------------------------------------ */}
 
-        <section className="relative overflow-hidden bg-charcoal text-ivory">
+        <Section theme="dark" className="relative overflow-hidden bg-charcoal text-ivory">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute left-[-12%] top-[25%] h-[420px] w-[420px] rounded-full bg-blue/[0.07] blur-[140px]" />
 
@@ -803,7 +804,7 @@ export default function AboutPage() {
                 </h2>
               </div>
 
-              <p className="max-w-sm text-sm leading-7 text-ivory/45">
+              <p className=" text-justify max-w-sm text-sm leading-7 text-ivory/45">
                 A visual record of some of the gatherings,
                 relationships, teachings, and moments that
                 form part of the ministry&apos;s journey.
@@ -871,13 +872,13 @@ export default function AboutPage() {
               })}
             </div>
           </div>
-        </section>
+        </Section>
 
         {/* ------------------------------------------------------------------ */}
         {/* Values / Way of Working                                             */}
         {/* ------------------------------------------------------------------ */}
 
-        <section className="relative overflow-hidden bg-ivory">
+        <Section theme="light" className="relative overflow-hidden bg-ivory">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute left-[15%] top-[-15%] h-[420px] w-[420px] rounded-full bg-gold/[0.06] blur-[140px]" />
             <div className="absolute right-[-10%] bottom-[5%] h-[420px] w-[420px] rounded-full bg-blue-soft/[0.07] blur-[140px]" />
@@ -934,7 +935,7 @@ export default function AboutPage() {
                       {item.title}
                     </h3>
 
-                    <p className="mt-3 text-sm leading-7 text-charcoal/55">
+                    <p className="mt-3 text-sm text-justify leading-7 text-charcoal/55">
                       {item.text}
                     </p>
                   </div>
@@ -942,13 +943,13 @@ export default function AboutPage() {
               </div>
             </div>
           </div>
-        </section>
+        </Section>
 
         {/* ------------------------------------------------------------------ */}
         {/* Closing CTA                                                        */}
         {/* ------------------------------------------------------------------ */}
 
-        <section className="relative overflow-hidden bg-charcoal text-ivory">
+        <Section theme="dark" className="relative overflow-hidden bg-charcoal text-ivory">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute left-[10%] top-[20%] h-[380px] w-[380px] rounded-full bg-blue/[0.08] blur-[140px]" />
 
@@ -970,7 +971,7 @@ export default function AboutPage() {
                   <span className="text-gold">continues.</span>
                 </h2>
 
-                <p className="mt-7 max-w-2xl text-base leading-8 text-ivory/55 sm:text-lg">
+                <p className="mt-7 max-w-2xl text-justify text-base leading-8 text-ivory/55 sm:text-lg">
                   There is still more to teach, more people
                   to reach, more lives to build, and more
                   Kingdom work to do. Explore the resources,
@@ -1022,7 +1023,7 @@ export default function AboutPage() {
               </div>
             </div>
           </div>
-        </section>
+        </Section>
       </main>
 
       <style jsx global>{`
