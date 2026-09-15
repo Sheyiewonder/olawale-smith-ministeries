@@ -6,6 +6,8 @@ import { ArrowUpRight, ArrowUp } from "lucide-react";
 import { pageThemes } from "@/lib/theme";
 import { useSectionTheme } from "./SectionTheme";
 
+import Section from "@/components/layout/Section";
+
 const footerLinks = [
   { label: "Home", href: "/" },
   { label: "Resources", href: "/resources" },
@@ -58,6 +60,9 @@ export default function Footer() {
       : config.page.accentHover;
 
   return (
+    <Section
+      theme="dark"
+    >
     <footer
       className={[
         "relative overflow-hidden border-t",
@@ -424,5 +429,6 @@ export default function Footer() {
         </div>
       </div>
     </footer>
+    </Section>
   );
 }

@@ -122,7 +122,7 @@ export default function Hero() {
               {/* Image */}
               <div className="relative aspect-[4/5] overflow-hidden rounded-[1.55rem] bg-blue-deep">
                 <Image
-                  src="/images/pastor olawale smith 014.jpg"
+                  src="/images/pastor olawale smith 003.jpg"
                   alt="Olawale Smith Ministries"
                   fill
                   priority
