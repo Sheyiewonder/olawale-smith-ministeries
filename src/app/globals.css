@@ -1028,3 +1028,83 @@ img {
     transform: none !important;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Invite section entrance animation                                          */
+/* -------------------------------------------------------------------------- */
+
+.invite-reveal {
+  animation: inviteReveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.invite-delay-80 {
+  animation-delay: 80ms;
+}
+
+.invite-delay-160 {
+  animation-delay: 160ms;
+}
+
+.invite-delay-200 {
+  animation-delay: 200ms;
+}
+
+.invite-delay-240 {
+  animation-delay: 240ms;
+}
+
+@keyframes inviteReveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .invite-reveal {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Partner Section                                                            */
+/* -------------------------------------------------------------------------- */
+
+.partner-reveal {
+  animation: partnerReveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.partner-delay-80 {
+  animation-delay: 80ms;
+}
+
+.partner-delay-160 {
+  animation-delay: 160ms;
+}
+
+.partner-delay-200 {
+  animation-delay: 200ms;
+}
+
+@keyframes partnerReveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .partner-reveal {
+    animation: none;
+  }
+}

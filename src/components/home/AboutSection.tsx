@@ -9,7 +9,11 @@ import {
   Users,
 } from "lucide-react";
 
+import Section from "@/components/layout/Section";
+
 import type { CSSProperties } from "react";
+
+
 
 /* -------------------------------------------------------------------------- */
 /* Image Data                                                                 */
@@ -270,7 +274,7 @@ function MinistryMotionVisual() {
 
 export default function AboutSection() {
   return (
-    <section
+    <Section theme="light"
       id="about"
       className="relative overflow-hidden bg-ivory text-charcoal"
     >
@@ -598,7 +602,7 @@ export default function AboutSection() {
                   style={
                     {
                       "--about-delay": `${Math.min(index * 50, 300)}ms`,
-                    } as React.CSSProperties
+                    } as CSSProperties
                   }
                 >
                   <article className="group relative h-full min-h-[220px] overflow-hidden border border-charcoal/10 bg-charcoal-soft shadow-[0_15px_45px_rgba(17,17,15,0.08)]">
@@ -694,6 +698,6 @@ export default function AboutSection() {
           </div>
         </div>
       </div>
-    </section>
+    </Section>
   );
 }
