@@ -501,10 +501,12 @@ export default function AudioPlayerBar() {
         className={[
           "relative",
           "overflow-visible",
-          "border-t",
-          "border-white/[0.55]",
-          "bg-ivory/[0.86]",
-          "shadow-[0_-20px_70px_rgba(36,90,150,0.12)]",
+          "rounded-t-2xl",
+          "border",
+          "border-white/[0.48]",
+          "border-b-0",
+          "bg-ivory/[0.62]",
+          "shadow-[0_-20px_70px_rgba(36,90,150,0.14)]",
           "backdrop-blur-2xl",
           "backdrop-saturate-150",
         ].join(" ")}
@@ -515,7 +517,7 @@ export default function AudioPlayerBar() {
 
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 overflow-hidden"
+          className="pointer-events-none absolute inset-0 overflow-hidden rounded-t-2xl"
         >
           {/* Primary blue atmosphere */}
 
@@ -557,8 +559,8 @@ export default function AudioPlayerBar() {
               "h-64",
               "w-72",
               "rounded-full",
-              "bg-gold/[0.10]",
-              "blur-3xl",
+              "bg-blue-deep/[0.40]",
+              "blur-2xl",
             ].join(" ")}
           />
 
@@ -608,23 +610,24 @@ export default function AudioPlayerBar() {
 
           {/* Ivory glass haze */}
 
-          <div className="absolute inset-0 bg-ivory/[0.34]" />
+          <div className="absolute overflow-hidden inset-0 bg-ivory/[0.34]" />
         </div>
 
         {/* Fine top highlight */}
 
-        <div
+        {/* <div
           aria-hidden="true"
           className={[
+            "overflow-hidden",
             "pointer-events-none",
             "absolute",
             "inset-x-0",
             "top-0",
             "z-20",
             "h-px",
-            "bg-white/[0.80]",
+            "bg-white/[0.20]",
           ].join(" ")}
-        />
+        /> */}
 
         <div className="relative z-10 mx-auto w-full max-w-[1600px] px-3 sm:px-5 lg:px-8">
           {/* ================================================================= */}
@@ -1042,7 +1045,7 @@ export default function AudioPlayerBar() {
                 <div
                   className={[
                     "absolute",
-                    "bottom-[calc(100%+0.75rem)]",
+                    "bottom-[calc(70%+0.75rem)]",
                     "left-1/2",
                     "z-[80]",
                     "flex",
@@ -1666,7 +1669,7 @@ export default function AudioPlayerBar() {
                   <div
                     className={[
                       "absolute",
-                      "bottom-[calc(100%+0.75rem)]",
+                      "bottom-[calc(70%+0.75rem)]",
                       "right-0",
                       "z-[80]",
                       "flex",
