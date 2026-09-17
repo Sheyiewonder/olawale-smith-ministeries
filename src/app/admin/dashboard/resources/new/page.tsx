@@ -196,15 +196,44 @@ function getYouTubeEmbedUrl(
 function inferMediaType(
   file: File,
 ): "AUDIO" | "PDF" | "IMAGE" | null {
-  if (file.type.startsWith("audio/")) {
+  const extension = file.name
+    .split(".")
+    .pop()
+    ?.toLowerCase();
+
+  const audioExtensions = new Set([
+    "aac",
+    "mp3",
+    "m4a",
+    "wav",
+    "ogg",
+    "oga",
+    "flac",
+    "webm",
+  ]);
+
+  if (
+    file.type.startsWith("audio/") ||
+    audioExtensions.has(extension ?? "")
+  ) {
     return "AUDIO";
   }
 
-  if (file.type === "application/pdf") {
+  if (
+    file.type === "application/pdf" ||
+    extension === "pdf"
+  ) {
     return "PDF";
   }
 
-  if (file.type.startsWith("image/")) {
+ if (
+    file.type.startsWith("image/") ||
+    extension === "jpg" ||
+    extension === "jpeg" ||
+    extension === "png" ||
+    extension === "webp" ||
+    extension === "gif"
+  ) {
     return "IMAGE";
   }
 
@@ -1908,7 +1937,7 @@ function MediaEditor({
               ref={fileInput}
               type="file"
               className="hidden"
-              accept="audio/*,image/*,application/pdf"
+              accept=".aac,.mp3,.m4a,.wav,.ogg,.oga,.flac,.webm,audio/*,image/*,application/pdf"
               onChange={(event) => {
                 onFile(
                   event.target.files?.[0],
