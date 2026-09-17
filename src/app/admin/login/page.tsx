@@ -31,11 +31,25 @@ export default function AdminLoginPage() {
 
     try {
       const response = await adminLogin(
-        email,
+        email.trim().toLowerCase(),
         password,
       );
 
-      setAdminToken(response.data.token);
+      const token = response?.data?.token;
+
+      if (!token) {
+        throw new Error(
+          "Login succeeded, but no authentication token was returned.",
+        );
+      }
+
+      /*
+       * Store the JWT so protected admin requests can authenticate.
+       *
+       * setAdminToken() should internally do:
+       * localStorage.setItem("admin_token", token)
+       */
+      setAdminToken(token);
 
       router.replace("/admin/dashboard");
     } catch (error) {
