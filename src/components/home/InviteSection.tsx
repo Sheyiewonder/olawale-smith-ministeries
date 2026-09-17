@@ -75,7 +75,7 @@ export default function InviteSection() {
               </span>
             </h2>
 
-            <p className="invite-reveal invite-delay-160 body-copy mt-8 max-w-2xl text-base leading-8 text-ivory/60 sm:text-lg">
+            <p className="invite-reveal invite-delay-160 body-copy text-justify mt-8 max-w-2xl text-base leading-8 text-ivory/60 sm:text-lg">
               Invite Pastor Olawale Smith to minister at your church,
               conference, convention, program, or special gathering.
             </p>
@@ -100,7 +100,7 @@ export default function InviteSection() {
                     Speaking Engagements
                   </p>
 
-                  <p className="mt-2 max-w-sm text-sm leading-7 text-ivory/55">
+                  <p className="mt-2 max-w-sm text-justify text-sm leading-7 text-ivory/55">
                     Churches, conferences, conventions, special programs,
                     and other ministry gatherings.
                   </p>
@@ -118,7 +118,7 @@ export default function InviteSection() {
                     Official Requests
                   </p>
 
-                  <p className="mt-2 max-w-sm text-sm leading-7 text-ivory/55">
+                  <p className="mt-2 max-w-sm text-justify text-sm leading-7 text-ivory/55">
                     Visit the invitation page for the official process and
                     ministry contact information.
                   </p>

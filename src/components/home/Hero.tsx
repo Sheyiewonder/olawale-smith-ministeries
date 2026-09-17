@@ -62,7 +62,7 @@ export default function Hero() {
               Olawale Smith Ministries
             </p>
 
-            <h1 className="hero-copy-item hero-copy-heading display-heading max-w-5xl text-6xl text-ivory sm:text-7xl lg:text-[7.8rem] xl:text-[8.5rem]">
+            <h1 className="hero-copy-item hero-copy-heading display-heading max-w-5xl text-5xl text-ivory sm:text-7xl lg:text-[7.8rem] xl:text-[8.5rem]">
               Resources for
               <br />
               <span className="relative inline-block text-gold">
@@ -72,7 +72,7 @@ export default function Hero() {
             </h1>
 
             <div className="hero-copy-item hero-copy-description mt-8 max-w-xl">
-              <p className="body-copy max-w-xl text-base text-ivory/65 sm:text-lg">
+              <p className="body-copy text-justify max-w-xl text-base text-ivory/65 sm:text-lg">
                 Explore a growing library of sermons, teachings, ebooks,
                 songs, podcasts and other resources designed to strengthen
                 your faith and deepen your walk with God.

@@ -3,40 +3,66 @@ import Section from "@/components/layout/Section";
 import {
   ArrowUpRight,
   BookOpen,
-  FolderOpen,
   Headphones,
-  Library,
   Music2,
   Play,
   Podcast,
 } from "lucide-react";
 
-import { getCategories } from "@/lib/api";
+/* -------------------------------------------------------------------------- */
+/* Resource Types                                                             */
+/* -------------------------------------------------------------------------- */
 
-const categoryIcons = [
-  BookOpen,
-  Headphones,
-  Music2,
-  Play,
-  Podcast,
-  Library,
-  FolderOpen,
-];
+const resourceTypes = [
+  {
+    name: "Songs",
+    type: "SONG",
+    description:
+      "Worship songs and music from Olawale Smith Ministries.",
+    icon: Music2,
+  },
+  {
+    name: "Sermons",
+    type: "SERMON",
+    description:
+      "Messages and teachings from Pastor Olawale Smith.",
+    icon: Headphones,
+  },
+  {
+    name: "Ebooks",
+    type: "EBOOK",
+    description:
+      "Books and written resources for spiritual growth and understanding.",
+    icon: BookOpen,
+  },
+  {
+    name: "Articles",
+    type: "ARTICLE",
+    description:
+      "Thoughts, teachings, insights, and written reflections.",
+    icon: BookOpen,
+  },
+  {
+    name: "Videos",
+    type: "VIDEO",
+    description:
+      "Video teachings, messages, and ministry content.",
+    icon: Play,
+  },
+  {
+    name: "Podcasts",
+    type: "PODCAST",
+    description:
+      "Conversations, discussions, and teachings in podcast form.",
+    icon: Podcast,
+  },
+] as const;
 
-export default async function ResourceCategories() {
-  let categories;
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
-  try {
-    categories = await getCategories();
-  } catch (error) {
-    console.error("Failed to load resource categories:", error);
-    return null;
-  }
-
-  if (!categories.length) {
-    return null;
-  }
-
+export default function ResourceCategories() {
   return (
     <Section
       theme="light"
@@ -45,13 +71,14 @@ export default async function ResourceCategories() {
       {/* ------------------------------------------------------------------ */}
       {/* Atmospheric background                                            */}
       {/* ------------------------------------------------------------------ */}
+
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 overflow-hidden"
       >
         <div className="absolute right-[-12%] top-[-8%] h-[520px] w-[520px] rounded-full bg-blue/[0.06] blur-[140px]" />
 
-        <div className="absolute left-[-14%] bottom-[-15%] h-[460px] w-[460px] rounded-full bg-blue-soft/[0.05] blur-[130px]" />
+        <div className="absolute bottom-[-15%] left-[-14%] h-[460px] w-[460px] rounded-full bg-blue-soft/[0.05] blur-[130px]" />
 
         <div className="absolute left-[35%] top-[38%] h-[300px] w-[300px] rounded-full bg-gold/[0.045] blur-[110px]" />
 
@@ -61,13 +88,14 @@ export default async function ResourceCategories() {
 
         <div className="absolute left-0 top-[28%] h-px w-[18%] bg-gradient-to-r from-transparent via-blue-soft/20 to-transparent" />
 
-        <div className="absolute right-0 bottom-[24%] h-px w-[20%] bg-gradient-to-l from-transparent via-gold/20 to-transparent" />
+        <div className="absolute bottom-[24%] right-0 h-px w-[20%] bg-gradient-to-l from-transparent via-gold/20 to-transparent" />
       </div>
 
       <div className="relative z-10 mx-auto max-w-7xl px-6 lg:px-8">
         {/* ---------------------------------------------------------------- */}
         {/* Header                                                           */}
         {/* ---------------------------------------------------------------- */}
+
         <div className="grid gap-10 lg:grid-cols-[1fr_0.75fr] lg:items-end">
           <div>
             <div className="flex items-center gap-4">
@@ -92,7 +120,7 @@ export default async function ResourceCategories() {
           </div>
 
           <div className="lg:pb-2">
-            <p className="max-w-lg text-sm leading-7 text-charcoal/55 sm:text-base">
+            <p className="max-w-lg text-justify text-sm leading-7 text-charcoal/55 sm:text-base">
               Explore teachings, messages, books, songs, articles, and other
               resources from Olawale Smith Ministries.
             </p>
@@ -108,32 +136,34 @@ export default async function ResourceCategories() {
         </div>
 
         {/* ---------------------------------------------------------------- */}
-        {/* Category Grid                                                    */}
+        {/* Resource Type Grid                                               */}
         {/* ---------------------------------------------------------------- */}
+
         <div className="mt-16 border-l border-t border-charcoal/10 sm:mt-20">
           <div className="grid sm:grid-cols-2 lg:grid-cols-3">
-            {categories.map((category, index) => {
-              const Icon =
-                categoryIcons[index % categoryIcons.length];
+            {resourceTypes.map((resource, index) => {
+              const Icon = resource.icon;
 
               return (
                 <Link
-                  key={category.id}
-                  href={`/resources?category=${encodeURIComponent(
-                    category.slug,
+                  key={resource.type}
+                  href={`/resources?type=${encodeURIComponent(
+                    resource.type,
                   )}`}
                   className="group relative min-h-[300px] overflow-hidden border-b border-r border-charcoal/10 bg-transparent p-7 transition-colors duration-500 hover:bg-charcoal sm:min-h-[330px] sm:p-8 lg:p-9"
                 >
                   {/* Hover atmosphere */}
+
                   <div
                     aria-hidden="true"
                     className="absolute inset-0 bg-gradient-to-br from-blue-deep/[0.08] via-transparent to-gold/[0.05] opacity-0 transition-opacity duration-500 group-hover:opacity-100"
                   />
 
                   {/* Corner architecture */}
+
                   <div
                     aria-hidden="true"
-                    className="absolute right-[-70px] top-[-70px] h-44 w-44 rounded-full border border-blue-soft/0 transition-all duration-700 group-hover:border-blue-soft/15 group-hover:scale-110"
+                    className="absolute right-[-70px] top-[-70px] h-44 w-44 rounded-full border border-blue-soft/0 transition-all duration-700 group-hover:scale-110 group-hover:border-blue-soft/15"
                   />
 
                   <div
@@ -142,11 +172,13 @@ export default async function ResourceCategories() {
                   />
 
                   {/* Number */}
+
                   <span className="absolute right-7 top-7 text-[9px] font-semibold tracking-[0.2em] text-charcoal/20 transition-colors duration-300 group-hover:text-ivory/20 sm:right-8 sm:top-8">
                     0{index + 1}
                   </span>
 
                   {/* Icon */}
+
                   <div className="relative z-10">
                     <div className="flex h-12 w-12 items-center justify-center rounded-full border border-bronze/20 text-bronze transition-all duration-500 group-hover:border-gold/50 group-hover:bg-gold group-hover:text-charcoal">
                       <Icon size={19} strokeWidth={1.35} />
@@ -154,19 +186,19 @@ export default async function ResourceCategories() {
                   </div>
 
                   {/* Content */}
+
                   <div className="relative z-10 mt-16">
                     <h3 className="max-w-[14rem] font-[var(--font-bricolage)] text-3xl leading-[1.05] tracking-[-0.025em] text-charcoal transition-colors duration-300 group-hover:text-ivory sm:text-[2.1rem]">
-                      {category.name}
+                      {resource.name}
                     </h3>
 
-                    {category.description && (
-                      <p className="mt-4 max-w-sm text-sm leading-6 text-charcoal/55 transition-colors duration-300 group-hover:text-ivory/50">
-                        {category.description}
-                      </p>
-                    )}
+                    <p className="mt-4 max-w-sm text-justify text-sm leading-6 text-charcoal/55 transition-colors duration-300 group-hover:text-ivory/50">
+                      {resource.description}
+                    </p>
                   </div>
 
                   {/* Bottom action */}
+
                   <div className="absolute bottom-7 left-7 right-7 z-10 flex items-center justify-between sm:bottom-8 sm:left-8 sm:right-8">
                     <span className="relative text-[9px] font-bold uppercase tracking-[0.22em] text-bronze transition-colors duration-300 group-hover:text-gold">
                       <span>Explore</span>
@@ -187,6 +219,7 @@ export default async function ResourceCategories() {
                   </div>
 
                   {/* Bottom hover line */}
+
                   <span
                     aria-hidden="true"
                     className="absolute bottom-0 left-0 h-px w-0 bg-gradient-to-r from-gold via-blue-soft to-transparent transition-all duration-700 group-hover:w-2/3"
@@ -200,6 +233,7 @@ export default async function ResourceCategories() {
         {/* ---------------------------------------------------------------- */}
         {/* Footer detail                                                    */}
         {/* ---------------------------------------------------------------- */}
+
         <div className="mt-8 flex items-center justify-between">
           <span className="text-[8px] uppercase tracking-[0.3em] text-charcoal/25">
             Olawale Smith Ministries

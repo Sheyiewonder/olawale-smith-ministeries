@@ -450,7 +450,7 @@ export default function AboutSection() {
               </div>
 
               <div className="about-reveal about-delay-300">
-                <div className="mt-7 max-w-2xl space-y-5 text-sm leading-8 text-charcoal/55 sm:text-base">
+                <div className="mt-7 max-w-2xl space-y-5 text-justify text-sm leading-8 text-charcoal/55 sm:text-base">
                   <p>
                     Pastor Olawale Smith is a born-again child of God, burning
                     with a special passion to reach the world for Christ. He
@@ -560,7 +560,7 @@ export default function AboutSection() {
               </div>
 
               <div className="about-reveal about-delay-160">
-                <p className="mt-7 max-w-xl text-left text-sm leading-8 text-charcoal/45 sm:text-base sm:leading-8">
+                <p className="mt-7 max-w-xl text-left text-justify text-sm leading-8 text-charcoal/45 sm:text-base sm:leading-8">
                   A glimpse into the gatherings, teachings, conferences,
                   worship moments, outreach, and people that form part of the
                   ministry&apos;s ongoing work.

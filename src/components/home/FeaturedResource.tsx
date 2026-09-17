@@ -24,7 +24,18 @@ function getResourceThumbnail(resource: Resource): string | null {
   const media = resource.media ?? [];
 
   /*
-   * 1. YouTube
+   * 1. Resource-level thumbnail
+   *
+   * This is the primary thumbnail attached to the resource itself.
+   * Existing resources may have their thumbnail stored here rather
+   * than as a media item's thumbnailUrl.
+   */
+  if (resource.thumbnail?.url) {
+    return resource.thumbnail.url;
+  }
+
+  /*
+   * 2. YouTube
    *
    * YouTube resources should use YouTube's own thumbnail rather than
    * requiring a separate image upload.
@@ -40,7 +51,7 @@ function getResourceThumbnail(resource: Resource): string | null {
   }
 
   /*
-   * 2. Audio thumbnail
+   * 3. Audio thumbnail
    *
    * Audio resources use the thumbnail uploaded alongside the audio.
    */
@@ -55,10 +66,9 @@ function getResourceThumbnail(resource: Resource): string | null {
   }
 
   /*
-   * 3. PDF / document thumbnail
+   * 4. PDF / document thumbnail
    *
-   * If the backend exposes a generated thumbnailUrl for a PDF,
-   * use it automatically.
+   * PDFs can expose an automatically generated thumbnailUrl.
    */
   const pdf = media.find(
     (item) =>
@@ -71,10 +81,10 @@ function getResourceThumbnail(resource: Resource): string | null {
   }
 
   /*
-   * 4. Legacy / explicit image media
+   * 5. Legacy / explicit image media
    *
-   * Keep this as a fallback so existing resources that still have
-   * IMAGE media don't suddenly lose their thumbnails.
+   * Keep this fallback for older resources that still have
+   * IMAGE media.
    */
   const image = media.find(
     (item) =>
@@ -160,10 +170,10 @@ export default async function FeaturedResource() {
               </span>
             </h2>
 
-            <p className="mt-8 max-w-lg text-base leading-8 text-ivory/60">
+            <p className="mt-8 max-w-lg text-justify text-base leading-8 text-ivory/60">
               Recent messages, books, music and conversations from
-              Pastor Olawale Smith — created to strengthen your faith,
-              deepen your understanding and inspire Kingdom impact.
+              Pastor Olawale Smith, curated to strengthen your faith,
+              deepen your understanding of the person of Christ and inspire Kingdom impact.
             </p>
           </div>
 
@@ -190,7 +200,7 @@ export default async function FeaturedResource() {
                       className={[
                         "relative overflow-hidden",
                         index === 0
-                          ? "aspect-[16/8]"
+                          ? "aspect-[4/5] sm:aspect-[16/9]"
                           : "aspect-[4/5]",
                       ].join(" ")}
                     >

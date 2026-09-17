@@ -69,7 +69,7 @@ export default function PartnerSection() {
             </div>
 
             <div className="partner-reveal partner-delay-160">
-              <p className="body-copy mt-8 max-w-2xl text-base leading-8 text-charcoal/55 sm:text-lg">
+              <p className="body-copy text-justify mt-8 max-w-2xl text-base leading-8 text-charcoal/55 sm:text-lg">
                 Partner with the ministry as we continue to share the
                 message, raise people, and advance kingdom impact. Together,
                 we can help carry the work further and reach more lives.
@@ -97,7 +97,7 @@ export default function PartnerSection() {
                       Kingdom Impact
                     </p>
 
-                    <p className="mt-2 max-w-sm text-sm leading-7 text-charcoal/50">
+                    <p className="mt-2 max-w-sm text-justify text-sm leading-7 text-charcoal/50">
                       Your partnership helps create room for the ministry to
                       share the message, equip people, and extend its reach.
                     </p>
@@ -115,7 +115,7 @@ export default function PartnerSection() {
                       More than giving
                     </p>
 
-                    <p className="mt-2 max-w-sm text-sm leading-7 text-charcoal/50">
+                    <p className="mt-2 max-w-sm text-justify text-sm leading-7 text-charcoal/50">
                       Discover the different ways you can stand with the
                       ministry and become part of the work.
                     </p>
@@ -136,10 +136,6 @@ export default function PartnerSection() {
                       className="relative z-10 transition-transform duration-300 group-hover:-translate-y-1 group-hover:translate-x-1"
                     />
 
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 translate-y-full bg-blue/20 transition-transform duration-500 group-hover:translate-y-0"
-                    />
                   </Link>
                 </div>
               </div>
